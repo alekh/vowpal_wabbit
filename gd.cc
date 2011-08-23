@@ -10,6 +10,7 @@ embodied in the content of this file are licensed under the BSD
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <sys/timeb.h>
 
 #if defined(__SSE2__) && !defined(VW_LDA_NO_SSE)
 #include <xmmintrin.h>
@@ -35,18 +36,36 @@ void* gd_thread(void *in)
 
   size_t thread_num = params->thread_num;
   example* ec = NULL;
-  size_t current_pass = 0;
+  size_t current_pass = 0, physical_pass = 0;
+  double timeout = global.initial_timeout;
+  struct timeb t_begin, t_current, t_current_global, t_begin_global; 
+  double t_elapsed = 0, net_time = 0;
 
-  
+  ftime(&t_begin);
+  ftime(&t_begin_global);
+  if(global.variable_pass)
+    cerr<<"Variable pass lengths on with timeout = "<<timeout<<endl;
+  cerr<<"Current pass = "<<current_pass<<" and total number of passes = "<<global.numpasses<<endl;
+  //double* old_weights = new double[global.stride*(1 << global.num_bits)];
+
   while ( true )
     {//this is a poor man's select operation.
+      
+      if(global.variable_pass && current_pass >= global.numpasses && !global.stop_parser) {
+	global.stop_parser = true;
+	cerr<<"Threads to finish = "<<ec->threads_to_finish<<endl;
+	ec->threads_to_finish--;
+	delay_example(ec,0);	
+      }
+
       if ((ec = get_delay_example(thread_num)) != NULL)//nonblocking
 	{
-
-	  if (ec->pass != current_pass)
+	  if (ec->pass != physical_pass)
 	    {
 	      global.eta *= global.eta_decay_rate;
-	      current_pass = ec->pass;
+	      physical_pass = ec->pass;
+	      if(!global.variable_pass) current_pass = physical_pass;
+	      else global.passes_complete = 0;
 	    }
 	  if (global.adaptive)
 	    adaptive_inline_train(reg,ec,thread_num, ec->eta_round);
@@ -57,15 +76,46 @@ void* gd_thread(void *in)
       else if ((ec = get_example(thread_num)) != NULL)//semiblocking operation.
 	{
 	  assert(ec->in_use);
-
-	  if (ec->pass != current_pass && global.master_location != "")
+	  if(global.variable_pass) {
+	    ftime(&t_current);
+	    t_elapsed = (t_current.time - t_begin.time) + (t_current.millitm - t_begin.millitm)/(1000.0); 
+	  }
+	  
+	  if (((!global.variable_pass && ec->pass != physical_pass) || (global.variable_pass && t_elapsed > timeout)))
 	    {
-	      if(global.master_location != "") {
+	      //size_t length = 1 << global.num_bits;
+	      if(global.master_location != "" && global.training) {
+		ftime(&t_current_global);
+		net_time = (t_current_global.time - t_begin_global.time) + (t_current_global.millitm - t_begin_global.millitm)/(1000.0); 
+		cerr<<"Averaging models, time = "<<net_time<<" communication time = "<<get_comm_time()/1000.0<<endl;
+		// for(size_t i = 0;i < length;i++) 
+// 		  for(size_t j = 0;j < global.stride;j++)
+// 		    old_weights[global.stride*i+j] = (reg.weight_vectors[0])[global.stride*i+j];
+		    
 		if(global.adaptive)
 		  //accumulate_avg(*(params->socks), params->reg, 0);	      
 		  accumulate_weighted_avg(global.master_location, params->reg);
 		else 
 		  accumulate_avg(global.master_location, params->reg, 0);	      
+	      }
+	      if(global.save_per_round) {
+		char* filename = new char[(params->final_regressor_name)->length()+4];
+		sprintf(filename,"%s.%lu",(params->final_regressor_name)->c_str(),current_pass);
+		dump_regressor(string(filename), *(global.reg));
+		delete filename;
+	      }
+	      
+	      // if(global.master_location != "" && global.training) {
+// 		for(size_t i = 0;i < length;i++) 
+// 		  for(size_t j = 0;j < global.stride;j++)
+// 		    (reg.weight_vectors[0])[global.stride*i+j] =  old_weights[global.stride*i+j];
+	      //}
+
+	      if(global.variable_pass) {
+		t_elapsed = 0;
+		ftime(&t_begin);
+		current_pass++;
+		//global.passes_complete++;
 	      }
 	    }
 
@@ -87,20 +137,29 @@ void* gd_thread(void *in)
 	      for(uint32_t i = 0; i < length; i++)
 		reg.weight_vectors[0][stride*i] = real_weight(reg.weight_vectors[0][stride*i],gravity);
 	    }
-	  if(global.master_location != "") {
+	  if(global.master_location != "" && global.training) {
+	    cerr<<"Averaging models at the end\n";
 	    if(global.adaptive)
 	      //  accumulate_avg(*(params->socks), params->reg, 0);	      
 	      accumulate_weighted_avg(global.master_location, params->reg);
 	    else 
 	      accumulate_avg(global.master_location, params->reg, 0);	      
 	  }
+	  if(global.save_per_round) {
+		char* filename = new char[(params->final_regressor_name)->length()+4];
+		sprintf(filename,"%s.%lu",(params->final_regressor_name)->c_str(),current_pass);
+		dump_regressor(string(filename), *(global.reg));
+		delete filename;
+	  }
 	  if (global.local_prediction > 0)
 	    shutdown(global.local_prediction, SHUT_WR);
+	  //delete[] old_weights;
 	  return NULL;
 	}
       else 
 	;//busywait when we have predicted on all examples but not yet trained on all.
     }
+//delete[] old_weights;
   return NULL;
 }
 

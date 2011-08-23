@@ -15,6 +15,7 @@ This implements various accumulate functions building on top of allreduce.
 
 using namespace std;
 
+void accumulate_array(string master_location, float* arr, int length);
 void accumulate(string master_location, regressor& reg, size_t o);
 float accumulate_scalar(string master_location, float local_sum);
 void accumulate_weighted_avg(string master_location, regressor& reg);

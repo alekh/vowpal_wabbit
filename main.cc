@@ -4,9 +4,10 @@ embodied in the content of this file are licensed under the BSD
 (revised) open source license
  */
 
+#include <stdlib.h>
 #include "vw.h"
 #include "gd.h"
-#include <stdlib.h>
+#include "accumulate.h"
 
 int main(int argc, char *argv[]) {
   srand48(100001);
@@ -22,6 +23,14 @@ int main(int argc, char *argv[]) {
     {
       cerr.precision(4);
       cerr << endl << "finished run";
+      if(global.master_location != "") {
+	float loss = global.sum_loss;
+	global.sum_loss = (double)accumulate_scalar(global.master_location, loss);
+	float weighted_examples = global.weighted_examples;
+	global.weighted_examples = (double)accumulate_scalar(global.master_location, weighted_examples);
+	float example_number = global.example_number;
+	global.example_number = (unsigned long long)accumulate_scalar(global.master_location, example_number);
+      }
       cerr << endl << "number of examples = " << global.example_number;
       cerr << endl << "weighted example sum = " << global.weighted_examples;
       cerr << endl << "weighted label sum = " << global.weighted_labels;

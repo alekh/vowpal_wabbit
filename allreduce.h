@@ -22,6 +22,6 @@ using namespace std;
 
 const int buf_size = 1<<18;
 
-void all_reduce(char* buffer, int n, string master_location);
+void all_reduce(char* buffer, int n, string master_location, int &node_id);
 
 #endif

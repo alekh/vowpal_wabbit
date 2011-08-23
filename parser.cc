@@ -602,6 +602,7 @@ example* get_unused_example()
 
 bool parse_atomic_example(parser* p, example *ae)
 {
+  
   if (global.audit)
     for (size_t* i = ae->indices.begin; i != ae->indices.end; i++) 
       {
@@ -629,6 +630,8 @@ bool parse_atomic_example(parser* p, example *ae)
   ae->indices.erase();
   ae->tag.erase();
   ae->sorted = false;
+  if(global.stop_parser) return false;
+
   if (p->reader(p,ae) <= 0)
     return false;
 
@@ -643,7 +646,8 @@ bool parse_atomic_example(parser* p, example *ae)
 
   if(global.ngram > 1)
     generateGrams(global.ngram, global.skips, ae);
-    
+
+
   return true;
 }
 
@@ -777,6 +781,7 @@ void *main_parse_loop(void *in)
       }
       else
 	{
+
 	  reset_source(global.num_bits, p);
 	  global.passes_complete++;
 	  if (global.passes_complete == global.numpasses && example_number == global.pass_length)
@@ -785,12 +790,14 @@ void *main_parse_loop(void *in)
 	      global.pass_length = global.pass_length*2+1;
 	    }
 	  example_number = 0;
-	  if (global.passes_complete >= global.numpasses)
+
+	  if (global.passes_complete >= global.numpasses || global.stop_parser)
 	    {
 	      pthread_mutex_lock(&examples_lock);
 	      done = true;
 	      pthread_mutex_unlock(&examples_lock);
 	    }
+	  
 	  pthread_mutex_lock(&examples_lock);
 	  ae->in_use = false;
 	  pthread_cond_broadcast(&example_available);

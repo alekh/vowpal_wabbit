@@ -74,6 +74,7 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
     ("initial_regressor,i", po::value< vector<string> >(), "Initial regressor(s)")
     ("initial_pass_length", po::value<size_t>(&global.pass_length)->default_value((size_t)-1), "initial number of examples per pass")
     ("initial_t", po::value<float>(&(par->t))->default_value(1.), "initial t value")
+    ("initial_timeout", po::value<long long unsigned>(&global.initial_timeout)->default_value(1000000000), "value to initialize the timeout to")
     ("l1", po::value<float>(&global.l_1_regularization)->default_value(0.), "l_1 regularization level")
     ("lda", po::value<size_t>(&global.lda), "Run lda with <int> topics")
     ("lda_alpha", po::value<float>(&global.lda_alpha)->default_value(0.1), "Prior on sparsity of per-document topic weights")
@@ -103,7 +104,9 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
     ("random_weights", po::value<bool>(&global.random_weights), "make initial weights random")
     ("raw_predictions,r", po::value< string >(),
      "File to output unnormalized predictions to")
+    ("save_per_round", "Save the model after every pass over data")
     ("sendto", po::value< vector<string> >(), "send example to <hosts>")
+    ("stdev_on", "scale regularization by stdev")
     ("testonly,t", "Ignore label information and just test")
     ("thread_bits", po::value<size_t>(&global.thread_bits)->default_value(0), "log_2 threads")
     ("loss_function", po::value<string>()->default_value("squared"), "Specify the loss function to be used, uses squared by default. Currently available ones are squared, classic, hinge, logistic and quantile.")
@@ -111,6 +114,7 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
     ("unique_id", po::value<size_t>(&global.unique_id)->default_value(0),"unique id used for cluster parallel")
     ("sort_features", "turn this on to disregard order in which features have been defined. This will lead to smaller cache sizes")
     ("ngram", po::value<size_t>(), "Generate N grams")
+    ("vary_pass_length", "Avoids synchronization bottlenecks by using variable batch sizes at each node in a parallel setup")
     ("skips", po::value<size_t>(), "Generate skips in N grams. This in conjunction with the ngram tag can be used to generate generalized n-skip-k-gram.");
 
 
@@ -119,12 +123,12 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
   global.weighted_examples = 0.;
   global.old_weighted_examples = 0.;
   global.backprop = false;
-  global.bfgs = false;
   global.corrective = false;
   global.delayed_global = false;
   global.conjugate_gradient = false;
   global.bfgs = false;
   global.hessian_on = false;
+  global.stdev_on = false;
   global.stride = 1;
   global.weighted_labels = 0.;
   global.total_features = 0;
@@ -153,6 +157,11 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
   global.active = false;
   global.active_simulation =false;
   global.reg = &r;
+  global.save_per_round = false;
+  global.node_id = 0;
+  global.variable_pass = false;
+
+  global.stop_parser = false;
 
 
   po::positional_options_description p;
@@ -226,12 +235,19 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
       }
   }
 
+  if(vm.count("vary_pass_length"))
+    global.variable_pass = true;
+
   if (vm.count("bfgs")) {
     global.bfgs = true;
     global.stride = 4;
     if (vm.count("hessian_on")) {
       global.hessian_on = true;
     }
+    if (vm.count("stdev_on")) {
+      global.stdev_on = true;
+    }
+
     if (!global.quiet) {
        if (global.m>0)
 	 cerr << "enabling BFGS based optimization ";
@@ -387,6 +403,9 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
   if (vm.count("readable_model"))
     global.text_regressor_name = vm["readable_model"].as<string>();
 
+  if(vm.count("final_regressor") && vm.count("save_per_round"))
+    global.save_per_round=true;
+
   if (vm.count("active_c0"))
     global.active_c0 = vm["active_c0"].as<float>();
 
@@ -436,7 +455,7 @@ po::variables_map parse_args(int argc, char *argv[], boost::program_options::opt
 	cerr << "decay_learning_rate = " << global.eta_decay_rate << endl;
       if (global.rank > 0)
 	cerr << "rank = " << global.rank << endl;
-      if (global.regularization > 0 && (global.conjugate_gradient || global.bfgs))
+      if (global.regularization > 0 && (global.conjugate_gradient || global.bfgs || global.variable_pass))
 	cerr << "regularization = " << global.regularization << endl;
     }
 

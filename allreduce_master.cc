@@ -170,7 +170,7 @@ int main(int argc, char* argv[]) {
     }
     cout<<"Finished reading at master\n";
     for(int i = 0;i < source_count;i++) {
-      if(write(client_sockets[i].socket, &source_count, sizeof(source_count)) < (int) sizeof(source_count)) 
+      if(write(client_sockets[i].socket, &i, sizeof(i)) < (int) sizeof(i)) 
 	cerr<<" Write failed\n";
       close(client_sockets[i].socket);
     }

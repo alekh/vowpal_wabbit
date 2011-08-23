@@ -40,6 +40,8 @@ struct global_data {
   bool bfgs;
   bool hessian_on;
   int m;
+  bool variable_pass;
+  bool stdev_on;
 
   size_t stride;
 
@@ -117,6 +119,12 @@ struct global_data {
   float eta_decay_rate;
 
   regressor* reg;
+
+  bool save_per_round;
+  unsigned long long initial_timeout;
+  int node_id;
+
+  bool stop_parser;
 };
 extern pthread_mutex_t io;
 extern global_data global;

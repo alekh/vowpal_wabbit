@@ -28,6 +28,7 @@ embodied in the content of this file are licensed under the BSD
 #include "message_relay.h"
 #include "multisource.h"
 #include "allreduce.h"
+#include "bfgs_better.h"
 #include <sys/timeb.h>
 
 gd_vars* vw(int argc, char *argv[])
@@ -83,8 +84,16 @@ gd_vars* vw(int argc, char *argv[])
     }
   else if (global.bfgs)
     {
-      BFGS::setup_bfgs(t);
-      BFGS::destroy_bfgs();
+      if (global.variable_pass)
+	{
+	  cerr<<"Turning variable pass lengths on\n";
+	  BFGS_BETTER::setup_bfgs(t);
+	  BFGS_BETTER::destroy_bfgs();
+	}
+      else {
+	BFGS::setup_bfgs(t);
+	BFGS::destroy_bfgs();
+      }  
     }
   else if (global.rank > 0)
     {
@@ -94,14 +103,18 @@ gd_vars* vw(int argc, char *argv[])
   else 
     {
       setup_gd(t);
+      cerr<<"Destroying GD\n";
       destroy_gd();
+      cerr<<"Destroyed GD\n";
     }
 
   if (global.local_prediction > 0 && (global.unique_id == 0 || global.backprop || global.corrective || global.delayed_global) )
     destroy_relay();
 
   destroy_delay_ring();
+  cerr<<"Destroying parser\n";
   end_parser(p);
+  cerr<<"Destroyed parser\n";
   
   finalize_regressor(final_regressor_name,t.reg);
   finalize_source(p);

@@ -95,7 +95,7 @@ int all_reduce_init(string master_location)
   int master_sock = sock_connect(master_ip, htons(port));
   int client_port, kid_count, parent_port;
   uint32_t parent_ip;
-  int numnodes;
+  int node_id;
 
   if(read(master_sock, &client_port, sizeof(client_port)) < (int)sizeof(client_port))
     cerr << "read failed!" << endl;
@@ -135,7 +135,7 @@ int all_reduce_init(string master_location)
   if(write(master_sock, &done, sizeof(done)) < (int)sizeof(done))
     cerr << "write failed!" << endl;
   
-  if(read(master_sock, &numnodes, sizeof(done)) < (int)sizeof(done))
+  if(read(master_sock, &node_id, sizeof(done)) < (int)sizeof(done))
     cerr << "read failed!" << endl;
     
   close(master_sock);
@@ -167,7 +167,7 @@ int all_reduce_init(string master_location)
   if (kid_count > 0)
     close(sock);
 
-  return numnodes;
+  return node_id;
     
 }
 
@@ -353,10 +353,10 @@ void broadcast(char* buffer, int n, int parent_sock, int* child_sockets) {
     }
 }
 
-void all_reduce(char* buffer, int n, string master_location) 
+void all_reduce(char* buffer, int n, string master_location,int &node_id) 
 {
   if(master_location != current_master) 
-    all_reduce_init(master_location);
+    node_id = all_reduce_init(master_location);
     
   reduce(buffer, n, socks.parent, socks.children);
   broadcast(buffer, n, socks.parent, socks.children);
