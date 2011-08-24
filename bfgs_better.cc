@@ -468,6 +468,18 @@ void update_weight_mem(regressor& reg, float* mem, float step_size)
     w[BFGS_W_XT] = mem[2*m+BFGS_XT] + step_size * w[BFGS_W_DIR];
 }
   
+
+int compare (const void * a, const void * b)
+{
+  int ret = 0;
+  if(( *(float*)a - *(float*)b ) > 0)
+    ret = 1;
+  else if(( *(float*)a - *(float*)b ) < 0)
+    ret = -1;
+  return ret;
+}
+
+
 double update_timeout(double t_elapsed, int numnodes) 
 {
   if(global.master_location == "") return t_elapsed;
@@ -476,11 +488,10 @@ double update_timeout(double t_elapsed, int numnodes)
   for(int i = 0;i < numnodes;i++) time_array[i] = 0;
   time_array[global.node_id] = t_elapsed;
   accumulate_array(global.master_location, time_array, numnodes);
-  double mintime = time_array[0];
-  for(int i = 1;i < numnodes;i++)
-    if(time_array[i] < mintime) mintime = time_array[i];
+  qsort(time_array, numnodes, sizeof(float), compare); 
+  float median = time_array[numnodes/2];
   delete[] time_array;
-  return mintime;
+  return median;
 }
 
 void normalize(regressor& reg, size_t o, double factor) {
