@@ -1,0 +1,1 @@
+awk '{if(index($0,"model") > 0) printf("%s \t",$0); if($1 == "average" && $2 == "loss") print $4;}' $1
