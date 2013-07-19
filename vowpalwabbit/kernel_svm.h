@@ -20,7 +20,7 @@ namespace KSVM
 
   struct svm_model{    
     int num_support;
-    v_array<example*> model;
+    v_array<example*> support_vec;
     v_array<float> alpha;
     v_array<float> delta;
     float maxdelta;    
