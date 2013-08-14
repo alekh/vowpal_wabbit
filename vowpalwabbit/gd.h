@@ -15,6 +15,7 @@ license as described in the file LICENSE.
 #include "parse_regressor.h"
 #include "parser.h"
 #include "sparse_dense.h"
+#include "v_array.h"
 
 namespace GD{
 void print_result(int f, float res, v_array<char> tag);
@@ -33,7 +34,7 @@ void output_and_account_example(example* ec);
  template <void (*T)(vw&, void*, float, uint32_t)>
    void foreach_feature(vw& all, void* dat, feature* begin, feature* end, uint32_t offset=0, float mult=1.)
    {
-     for (feature* f = begin; f!= end; f++)
+     for (feature* f = begin; f!= end; f++) 
        T(all, dat, mult*f->x, f->weight_index + offset);
    }
  
@@ -63,10 +64,10 @@ void output_and_account_example(example* ec);
        for (; temp1.begin != temp1.end; temp1.begin++) {
 	 v_array<feature> temp2 = ec->atomics[(int)(*i)[1]];
 	 for (; temp2.begin != temp2.end; temp2.begin++) {
-	   
+	   //cerr<<temp1.begin->x<<" "<<temp1.size()<<" "<<temp2.begin->x<<" "<<temp2.size()<<endl;
 	   uint32_t halfhash = cubic_constant2 * (cubic_constant * (temp1.begin->weight_index + offset) + temp2.begin->weight_index + offset);
 	   float mult = temp1.begin->x * temp2.begin->x;
-	   return foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[2]].begin, ec->atomics[(int)(*i)[2]].end, halfhash, mult);
+	   foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[2]].begin, ec->atomics[(int)(*i)[2]].end, halfhash, mult);
 	 }
        }
      }

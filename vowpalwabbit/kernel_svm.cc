@@ -53,7 +53,7 @@ namespace KSVM
     double lambda;
 
     void* kernel_params;
-    double (*kernel_function) (example*, example*, void*);
+    size_t kernel_type;
     
     vw* all;
   };
@@ -61,6 +61,45 @@ namespace KSVM
   void save_load(void* data, io_buf& model_file, bool read, bool text) {   //TODO
   }
   
+  double linear_kernel(example* ec1, example* ec2) {
+    //Right now, assume things are sorted
+
+    double dotprod = 0;
+    
+    uint32_t offset = ec->ft_offset;    
+    
+    for (unsigned char* i = ec1->indices.begin; i != ec1->indices.end; i++) {
+      uint32_t ec2pos = 0;      
+      feature* ec2f = ec2->atomics[*i].begin;
+      for(feature* f = ec1->atomics[*i].begin; f != ec1->atomics[*i].end && ec2f != ec2->atomics[*i].end;f++) {
+	uint32_t ec1pos = f->weight_index;
+	if(ec1pos < ec2pos) continue;
+	else if(ec1pos == ec2pos) {
+	  dotprod += f->x*ec2f->x;
+	  ec2f++;
+	  if(ec2f != ec2->atomics[*i].end)
+	    ec2pos = ec2f->weight_index;
+	}
+	else 
+	  while(ec1pos > ec2pos && ec2f != ec2->atomics[*i].end) {
+	    ec2f++;
+	    ec2pos = ec2f->weight_index;
+	  }
+      }
+    }
+      
+    return dotprod;
+  }
+
+  double kernel_function(example* ec1, example* ec2, void* params, size_t kernel_type) {
+    switch(kernel_type) {
+    case SVM_KER_RBF:
+      return rbf_kernel(ec1, ec2, *(double*)params);
+    case SVM_KER_LIN:
+      return linear_kernel(ec1, ec2);
+    }
+  }
+
   double dense_dot(double* v1, double* v2, int n) {
     double dot_prod = 0.;
     for(int i = 0;i < n;i++)
@@ -74,7 +113,7 @@ namespace KSVM
     
     svm_model* model = params->model;
     for(int = 0 ;i < model->num_support;i++)
-      inprods[i] = params->kernel_function(ec, model->support_vec[i], params->kernel_params);
+      inprods[i] = kernel_function(ec, model->support_vec[i], params->kernel_params);
     
   }
 
@@ -286,25 +325,58 @@ namespace KSVM
   }
 
 
-  learner setup(vw &all) {
+  learner setup(vw &all, std::vector<std::string>&opts, po::variables_map& vm, po::variables_map& vm_file) {
     svm_params* params = (svm_params*) calloc(1,sizeof(svm_params));
 
     params->model = (svm_model*) calloc(1,sizeof(svm_model));
     params->model->num_support = 0;
     params->model->maxdelta = 0.;
     
+    //TODO: Ask John about parsing
+
     params->all = all;
-    params->reprocess = all->reprocess;
-    params->active = all.active;    
-    params->active_pool_greedy = all->active_pool_greedy;
-    params->para_active = all->para_active;
     
-    params->pool_size = all->pool_size;
+    if(vm.count("reprocess"))
+      params->reprocess = vm["reprocess"];
+    else
+      params->reprocess = 1;
+
+    params->active_simulation = all.active_simulation;    
+    if(params->active_simulation) {
+      if(vm.count("pool_greedy"))
+	params->active_pool_greedy = 1;
+      if(vm.count("para_active"))
+	params->para_active = 1;
+    }
+    
+    if(vm.count("pool_size")) 
+      params->pool_size = vm["pool_size"];
+    else
+      params->pool_size = 1;
+
     params->pool = new example*[params->pool_size];
     params->pool_pos = 0;
-    params->subsample = all->subsample;
+    
+    if(vm.count("subsample"))
+      params->subsample = vm["subsample"];
+    else
+      params->subsample = 1;
+    
+    params->lambda = all->l2_lambda;
 
-    params->lambda = all->lambda;
+    if(vm.count("kernel")) {
+      std::string kernel_type = vm["kernel"].as<std::string>();
+      if(kernel_type.compare("rbf") == 0) {
+	params->kernel_type = SVM_KER_RBF;
+	double bandwidth = 1.;
+	if(vm.count("bandwidth")) 
+	  bandwidth = vm["bandwidth"];
+	params->kernel_params = &bandwidth;
+      }      
+      else
+	params->kernel_type = SVM_KER_LIN;
+      
+    }
     
     sl_t sl = {ksvm, save_load};
     learner ret(ksvm, driver, learn, finish, sl);

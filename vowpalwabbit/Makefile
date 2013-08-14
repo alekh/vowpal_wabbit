@@ -1,5 +1,5 @@
 COMPILER = g++
-BINARIES = vw active_interactor
+BINARIES = vw active_interactor	flatten_test
 MANPAGES = vw.1
 
 all:	
@@ -38,6 +38,9 @@ libvw.a: $(filter-out vw.o,$(vw_OBJECTS))
 	ar rcs $@ $+
 
 vw: main.o libvw.a liballreduce.a
+	$(COMPILER) $(FLAGS) -L$(BOOST_LIBRARY) -L. -o $@ $< -l vw -l allreduce $(LIBS)
+
+flatten_test: flatten_test.o
 	$(COMPILER) $(FLAGS) -L$(BOOST_LIBRARY) -L. -o $@ $< -l vw -l allreduce $(LIBS)
 
 active_interactor: active_interactor.cc

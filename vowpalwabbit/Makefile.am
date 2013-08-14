@@ -17,6 +17,8 @@ vw_DEPENDENCIES = libvw.la liballreduce.la
 
 active_interactor_SOURCES = active_interactor.cc
 
+flatten_test_SOURCES = flatten_test.cc
+
 ACLOCAL_AMFLAGS = -I acinclude.d
 
 INCLUDES = ${BOOST_CPPFLAGS} ${ZLIB_CPPFLAGS} ${PTHREAD_CFLAGS}

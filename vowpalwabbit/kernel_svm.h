@@ -9,6 +9,9 @@ license as described in the file LICENSE.
 #include <netdb.h>
 #endif
 
+#define SVM_KER_LIN 0
+#define SVM_KER_RBF 1
+
 #include "example.h"
 #include "v_array.h"
 #include "vw.h"
