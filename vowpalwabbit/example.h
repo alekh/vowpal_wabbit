@@ -8,6 +8,7 @@ license as described in the file LICENSE.
 
 #include <stdint.h>
 #include "v_array.h"
+#include "io_buf.h"
 
 struct feature {
   float x;
@@ -24,6 +25,7 @@ struct audit_data {
 };
 
 typedef float simple_prediction;
+struct vw;
 
 struct example // core example datatype.
 {
@@ -57,36 +59,46 @@ struct example // core example datatype.
   bool done; //set to false by setup_example()
 };
 
-struct flat_example {
-  void* ld;
-  simple_prediction final_prediction;
+namespace VW{
 
-  v_array<char> tag;//An identifier for the example.
-  size_t example_counter;
+  struct flat_example {
+    void* ld;
+    simple_prediction final_prediction;
+    
+    size_t tag_len;
+    char* tag;//An identifier for the example.
+    size_t example_counter;
+    
+    size_t feature_map_len;
+    feature* feature_map; //map to store sparse feature vectors
+    uint32_t ft_offset;
+    
+    size_t num_features;//precomputed, cause it's fast&easy.
+    float partial_prediction;//shared data for prediction.
+    size_t topic_predictions_len;
+    float* topic_predictions;
+    float loss;
+    float eta_round;
+    float eta_global;
+    float global_weight;
+    float example_t;//sum of importance weights so far.
+    float total_sum_feat_sq;//precomputed, cause it's kind of fast & easy.
+    float revert_weight;
+    
+    bool end_pass;//special example indicating end of pass.
+    bool sorted;//Are the features sorted or not?
+    bool in_use; //in use or not (for the parser)
+    bool done; //set to false by setup_example()
+    bool command_example;
+  };
+  
+  flat_example* flatten_example(vw& all, example* ec);
+  int save_load_flat_example(io_buf& buf, bool read, flat_example& fec);
+  void free_flat_example(flat_example* fec);
 
-  v_array<feature> feature_map; //map to store sparse feature vectors
-  uint32_t ft_offset;
+}
 
-  size_t num_features;//precomputed, cause it's fast&easy.
-  float partial_prediction;//shared data for prediction.
-  v_array<float> topic_predictions;
-  float loss;
-  float eta_round;
-  float eta_global;
-  float global_weight;
-  float example_t;//sum of importance weights so far.
-  float sum_feat_sq[256];//helper for total_sum_feat_sq.
-  float total_sum_feat_sq;//precomputed, cause it's kind of fast & easy.
-  float revert_weight;
 
-  bool end_pass;//special example indicating end of pass.
-  bool sorted;//Are the features sorted or not?
-  bool in_use; //in use or not (for the parser)
-  bool done; //set to false by setup_example()
-};
-struct vw;
-
-flat_example flatten_example(vw& all, example* ec);
 
 example *alloc_example(size_t);
 void dealloc_example(void(*delete_label)(void*), example&);

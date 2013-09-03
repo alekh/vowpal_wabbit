@@ -30,6 +30,7 @@ license as described in the file LICENSE.
 #include "parse_args.h"
 #include "binary.h"
 #include "autolink.h"
+#include "kernel_svm.h"
 
 using namespace std;
 //
@@ -153,9 +154,10 @@ vw* parse_args(int argc, char *argv[])
 
     ("sort_features", "turn this on to disregard order in which features have been defined. This will lead to smaller cache sizes")
     ("ngram", po::value< vector<string> >(), "Generate N grams")
-    ("skips", po::value< vector<string> >(), "Generate skips in N grams. This in conjunction with the ngram tag can be used to generate generalized n-skip-k-gram.");
+    ("skips", po::value< vector<string> >(), "Generate skips in N grams. This in conjunction with the ngram tag can be used to generate generalized n-skip-k-gram.")
+    ("ksvm", "Kernel SVM");  
 
-  //po::positional_options_description p;
+  //Po::positional_options_description p;
   // Be friendly: if -d was left out, treat positional param as data file
   //p.add("data", -1);
 
@@ -396,6 +398,7 @@ vw* parse_args(int argc, char *argv[])
 	}
     }
 
+  
   io_buf io_temp;
   parse_regressor_args(*all, vm, io_temp);
 
@@ -720,6 +723,12 @@ vw* parse_args(int argc, char *argv[])
     cerr << "error: doesn't make sense to do both MC learning and CB learning" << endl;
     throw exception();
   }
+
+  if(vm.count("ksvm") || vm_file.count("ksvm")) {
+    cerr<<"Setting up KSVM\n";
+    all->l = KSVM::setup(*all, to_pass_further, vm, vm_file);
+  }
+
 
   if (to_pass_further.size() > 0) {
     bool is_actually_okay = false;
