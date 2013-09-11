@@ -100,44 +100,45 @@ namespace VW{
   void free_flat_example(flat_example* fec) {
     if(!fec) return;
 
-    cerr<<"Freeing example\n";
+    //cerr<<"Freeing example\n";
+    cerr<<fec<<" "<<fec->ld<<endl;
 
     if(fec->ld) free(fec->ld);
-    cerr<<"Freed ld\n";
+    //cerr<<"Freed ld\n";
     if(fec->tag) free(fec->tag);
-    cerr<<"Freed tag\n";
+    //cerr<<"Freed tag\n";
     if(fec->topic_predictions) free(fec->topic_predictions);
-    cerr<<"Freed topic predictions\n";
+    //cerr<<"Freed topic predictions\n";
     if(fec->feature_map) free(fec->feature_map);
-    cerr<<"Freed feature_map "<<fec->example_counter<<endl;
+    //cerr<<"Freed feature_map "<<fec->example_counter<<endl;
 
     free(fec);    
-    cerr<<"Freed example\n";
+    //cerr<<"Freed example\n";
   }
   
-  int save_load_flat_example(io_buf& model_file, bool read, flat_example& fec) {
+  int save_load_flat_example(io_buf& model_file, bool read, flat_example* fec) {
     size_t brw = 1;
     
     if(read) {
-      brw = bin_read_fixed(model_file, (char*) &fec, sizeof(fec), "");
+      brw = bin_read_fixed(model_file, (char*) fec, sizeof(VW::flat_example), "");
       if(brw > 0) {
-	brw = bin_read_fixed(model_file, (char*) fec.tag_len, fec.tag_len*sizeof(char), "");
+	brw = bin_read_fixed(model_file, (char*) fec->tag_len, fec->tag_len*sizeof(char), "");
 	if(!brw) return 2;
-	brw = bin_read_fixed(model_file, (char*) fec.feature_map, fec.feature_map_len*sizeof(feature), "");      
+	brw = bin_read_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature), "");      
 	if(!brw) return 3;
-	brw = bin_read_fixed(model_file, (char*) fec.topic_predictions, fec.topic_predictions_len*sizeof(float), "");
+	brw = bin_read_fixed(model_file, (char*) fec->topic_predictions, fec->topic_predictions_len*sizeof(float), "");
 	if(!brw) return 4;
       }
       else return 1;
     }
     else {
-      brw = bin_write_fixed(model_file, (char*) &fec, sizeof(fec));
+      brw = bin_write_fixed(model_file, (char*) fec, sizeof(VW::flat_example));
       if(brw > 0) {
-	brw = bin_write_fixed(model_file, (char*) fec.tag_len, fec.tag_len*sizeof(char));
+	brw = bin_write_fixed(model_file, (char*) fec->tag_len, fec->tag_len*sizeof(char));
 	if(!brw) return 2;
-	brw = bin_write_fixed(model_file, (char*) fec.feature_map, fec.feature_map_len*sizeof(feature));      
+	brw = bin_write_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature));      
 	if(!brw) return 3;
-	brw = bin_write_fixed(model_file, (char*) fec.topic_predictions, fec.topic_predictions_len*sizeof(float));
+	brw = bin_write_fixed(model_file, (char*) fec->topic_predictions, fec->topic_predictions_len*sizeof(float));
 	if(!brw) return 4;
       }
       else return 1;

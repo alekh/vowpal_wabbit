@@ -23,7 +23,7 @@ namespace KSVM
 
   struct svm_model{    
     size_t num_support;
-    v_array<VW::flat_example> support_vec;
+    v_array<VW::flat_example*> support_vec;
     v_array<float> alpha;
     v_array<float> delta;
     float maxdelta;    
