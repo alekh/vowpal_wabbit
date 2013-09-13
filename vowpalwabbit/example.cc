@@ -10,6 +10,7 @@ license as described in the file LICENSE.
 #include "simple_label.h"  
 #include "gd.h"  
 #include "global_data.h"  
+#include "stdlib.h"
   
 void vec_store(vw& all, void* p, float fx, uint32_t fi) {  
   feature f = {fx, fi};
@@ -19,7 +20,10 @@ void vec_store(vw& all, void* p, float fx, uint32_t fi) {
 int compare_feature(const void* p1, const void* p2) {  
   feature* f1 = (feature*) p1;  
   feature* f2 = (feature*) p2;  
-  return (f1->weight_index - f2->weight_index);  
+  //cerr<<f1->weight_index<<" "<<f2->weight_index<<" "<<(f1->weight_index > f2->weight_index)<<endl;
+  if(f1->weight_index < f2->weight_index) return -1;
+  else if(f1->weight_index > f2->weight_index) return 1;
+  else return 0;
 }  
   
 float collision_cleanup(v_array<feature>& feature_map) {  
@@ -43,80 +47,124 @@ float collision_cleanup(v_array<feature>& feature_map) {
 
 namespace VW {
 
-flat_example* flatten_example(vw& all, example *ec) 
-{  
+  flat_example* flatten_example(vw& all, example *ec) 
+  {  
     if (command_example(&all, ec))
-	{
-		return 0;
-	}
+      {
+	return 0;
+      }
 
-	flat_example* fec = (flat_example*) calloc(1,sizeof(flat_example));  
-	fec->ld = ec->ld;
-	fec->final_prediction = ec->final_prediction;  
+    flat_example* fec = (flat_example*) calloc(1,sizeof(flat_example));  
+    fec->ld = calloc(1, sizeof(label_data));
+    memcpy(fec->ld, ec->ld, sizeof(label_data));
+    fec->final_prediction = ec->final_prediction;  
 
-	fec->tag_len = ec->tag.size();
-	if (fec->tag_len >0)
-	{
-		fec->tag = ec->tag.begin;
-	}
+    fec->tag_len = ec->tag.size();
+    if (fec->tag_len >0)
+      {
+	fec->tag = (char*) calloc(1, sizeof(char));
+	memcpy(fec->tag, ec->tag.begin, sizeof(char));
+      }
 
-	fec->example_counter = ec->example_counter;  
-	fec->ft_offset = ec->ft_offset;  
-	fec->global_weight = ec->global_weight;  
-	fec->num_features = ec->num_features;  
+    fec->example_counter = ec->example_counter;  
+    fec->ft_offset = ec->ft_offset;  
+    fec->global_weight = ec->global_weight;  
+    fec->num_features = ec->num_features;  
     
-	v_array<feature> feature_map; //map to store sparse feature vectors  
-	GD::foreach_feature<vec_store>(all, ec, &feature_map); 
-	qsort(feature_map.begin, feature_map.size(), sizeof(feature), compare_feature);  
-    
-	fec->feature_map_len = feature_map.size();
-	if (fec->feature_map_len > 0)
-	{
-		fec->feature_map = feature_map.begin;
-	}
+    v_array<feature> feature_map; //map to store sparse feature vectors  
+    GD::foreach_feature<vec_store>(all, ec, &feature_map); 
+    // cerr<<"Before sort\n";
+    // for(int i = 0;i < feature_map.size();i++)
+    //   cerr<<feature_map[i].weight_index<<" ";
+    // cerr<<endl;
+    qsort(feature_map.begin, feature_map.size(), sizeof(feature), compare_feature);  
+    // cerr<<"After sort\n";
+    // for(int i = 0;i < feature_map.size();i++)
+    //   cerr<<feature_map[i].weight_index<<" ";
+    // cerr<<endl;
+    fec->feature_map_len = feature_map.size();
+    if (fec->feature_map_len > 0)
+      {
+	fec->feature_map = feature_map.begin;
+      }
 
-	return fec;  
-}
+    return fec;  
+  }
 
-  int save_load_flat_example(io_buf& model_file, bool read, flat_example* fec) {
+  int save_load_flat_example(io_buf& model_file, bool read, flat_example*& fec) {
     size_t brw = 1;
-    
+    //cerr<<"Save load flat example "<<endl;
     if(read) {
+      fec = (VW::flat_example*) calloc(1, sizeof(VW::flat_example));
+      //cerr<<"Done with calloc\n";
       brw = bin_read_fixed(model_file, (char*) fec, sizeof(VW::flat_example), "");
+      //cerr<<brw<<endl;
       if(brw > 0) {
-	brw = bin_read_fixed(model_file, (char*) fec->tag_len, fec->tag_len*sizeof(char), "");
-	if(!brw) return 2;
-	brw = bin_read_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature), "");      
-	if(!brw) return 3;
-	brw = bin_read_fixed(model_file, (char*) fec->topic_predictions, fec->topic_predictions_len*sizeof(float), "");
+	fec->ld = (label_data*) calloc(1, sizeof(label_data));
+	brw = bin_read_fixed(model_file, (char*) fec->ld, sizeof(label_data), "");
 	if(!brw) return 4;
+	if(fec->tag_len > 0) {
+	  //cerr<<"Reading tag "<<fec->tag_len<<endl;
+	  fec->tag = (char*) calloc(fec->tag_len, sizeof(char));	
+	  brw = bin_read_fixed(model_file, (char*) fec->tag, fec->tag_len*sizeof(char), "");
+	  if(!brw) return 2;
+	  //cerr<<brw<<endl;	
+	}
+	if(fec->feature_map_len > 0) {
+	  //cerr<<"Reading feature map "<<fec->feature_map_len<<endl;
+	  fec->feature_map = (feature*) calloc(fec->feature_map_len, sizeof(feature));
+	  brw = bin_read_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature), "");   
+	  //cerr<<brw<<endl;
+	  if(!brw) return 3;
+	}
       }
       else return 1;
     }
     else {
       brw = bin_write_fixed(model_file, (char*) fec, sizeof(VW::flat_example));
+
       if(brw > 0) {
-	brw = bin_write_fixed(model_file, (char*) fec->tag_len, fec->tag_len*sizeof(char));
-	if(!brw) return 2;
-	brw = bin_write_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature));      
-	if(!brw) return 3;
-	brw = bin_write_fixed(model_file, (char*) fec->topic_predictions, fec->topic_predictions_len*sizeof(float));
-	if(!brw) return 4;
+	if(fec->ld) {
+	  brw = bin_write_fixed(model_file, (char*) fec->ld, sizeof(label_data));
+	  if(!brw) return 4;
+	}
+	if(fec->tag_len > 0) {
+	  brw = bin_write_fixed(model_file, (char*) fec->tag, fec->tag_len*sizeof(char));
+	  if(!brw) {
+	    cerr<<fec->tag_len<<" "<<fec->tag<<endl;
+	    return 2;
+	  }
+	}
+	if(fec->feature_map_len > 0) {
+	  //cerr<<"Writing feature map "<<fec->feature_map_len<<endl;
+	  brw = bin_write_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature));      
+	  //cerr<<"Done writing feature map\n";
+	  if(!brw) return 3;
+	}
       }
       else return 1;
     }
+    //cerr<<"Example counter "<<fec->example_counter<<" "<<fec<<endl;
     return 0;
   }
 
 
-void free_flatten_example(flat_example* fec) 
-{
-  if(fec) {
-    if(fec->ld) free(fec->ld);
-    if(fec->tag) free(fec->tag);
-    if(fec->feature_map) free(fec->feature_map);
+  void free_flatten_example(flat_example* fec) 
+  {
+    if(fec) {      
+      //cerr<<fec->ld<<endl;
+      //label_data* ld = (label_data*) fec->ld;
+      //cerr<<ld->label<<endl;
+      if(fec->ld) free(fec->ld);
+      //cerr<<"Freed label\n";
+      if(fec->tag) free(fec->tag);
+      //cerr<<"Freed tag\n";
+      if(fec->feature_map) free(fec->feature_map);
+      //cerr<<"Freed feature_map\n";
 		  
-    free(fec);
+      free(fec);
+    }
+
   }
 
 }

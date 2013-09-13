@@ -280,6 +280,11 @@ vw* parse_args(int argc, char *argv[])
   if (vm.count("bfgs") || vm.count("conjugate_gradient")) 
     BFGS::setup(*all, to_pass_further, vm, vm_file);
 
+  if(vm.count("ksvm") || vm_file.count("ksvm")) {
+    cerr<<"Setting up KSVM\n";
+    all->l = KSVM::setup(*all, to_pass_further, vm, vm_file);
+  }
+
   if (vm.count("version") || argc == 1) {
     /* upon direct query for version -- spit it out to stdout */
     cout << version.to_string() << "\n";
@@ -756,10 +761,7 @@ vw* parse_args(int argc, char *argv[])
     throw exception();
   }
 
-  if(vm.count("ksvm") || vm_file.count("ksvm")) {
-    cerr<<"Setting up KSVM\n";
-    all->l = KSVM::setup(*all, to_pass_further, vm, vm_file);
-  }
+  
 
 
   if (to_pass_further.size() > 0) {

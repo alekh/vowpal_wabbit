@@ -80,7 +80,7 @@ struct flat_example
 	feature* feature_map; //map to store sparse feature vectors  
 };
  flat_example* flatten_example(vw& all, example *ec);
- int save_load_flat_example(io_buf& buf, bool read, flat_example* fec);
+ int save_load_flat_example(io_buf& buf, bool read, flat_example*& fec);
  void free_flatten_example(flat_example* fec);
 }
 
