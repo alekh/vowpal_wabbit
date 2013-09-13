@@ -15,6 +15,7 @@ license as described in the file LICENSE.
 #include "parse_regressor.h"
 #include "parser.h"
 #include "sparse_dense.h"
+#include "v_array.h"
 
 namespace GD{
 void print_result(int f, float res, v_array<char> tag);
@@ -26,14 +27,15 @@ void train_offset_example(regressor& r, example* ex, size_t offset);
 void compute_update(example* ec);
 void offset_train(regressor &reg, example* &ec, float update, size_t offset);
 void train_one_example_single_thread(regressor& r, example* ex);
- learner setup(vw& all);
- void save_load_regressor(vw& all, io_buf& model_file, bool read, bool text);
+learner setup(vw& all, po::variables_map& vm);
+//learner setup(vw& all);
+void save_load_regressor(vw& all, io_buf& model_file, bool read, bool text);
 void output_and_account_example(example* ec);
 
  template <void (*T)(vw&, void*, float, uint32_t)>
    void foreach_feature(vw& all, void* dat, feature* begin, feature* end, uint32_t offset=0, float mult=1.)
    {
-     for (feature* f = begin; f!= end; f++)
+     for (feature* f = begin; f!= end; f++) 
        T(all, dat, mult*f->x, f->weight_index + offset);
    }
  
@@ -47,13 +49,13 @@ void output_and_account_example(example* ec);
      
      for (vector<string>::iterator i = all.pairs.begin(); i != all.pairs.end();i++) {
        if (ec->atomics[(int)(*i)[0]].size() > 0) {
-	 v_array<feature> temp = ec->atomics[(int)(*i)[0]];
-	 for (; temp.begin != temp.end; temp.begin++)
-	   {
-	     uint32_t halfhash = quadratic_constant * (temp.begin->weight_index + offset);
-	     foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[1]].begin, ec->atomics[(int)(*i)[1]].end, 
-				halfhash, temp.begin->x);
-	   }
+		v_array<feature> temp = ec->atomics[(int)(*i)[0]];
+		 for (; temp.begin != temp.end; temp.begin++)
+		   {
+			 uint32_t halfhash = quadratic_constant * (temp.begin->weight_index + offset);
+			 foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[1]].begin, ec->atomics[(int)(*i)[1]].end, 
+					halfhash, temp.begin->x);
+		   }
        }
      }
      
@@ -66,7 +68,7 @@ void output_and_account_example(example* ec);
 	   
 	   uint32_t halfhash = cubic_constant2 * (cubic_constant * (temp1.begin->weight_index + offset) + temp2.begin->weight_index + offset);
 	   float mult = temp1.begin->x * temp2.begin->x;
-	   return foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[2]].begin, ec->atomics[(int)(*i)[2]].end, halfhash, mult);
+	   foreach_feature<T>(all, dat, ec->atomics[(int)(*i)[2]].begin, ec->atomics[(int)(*i)[2]].end, halfhash, mult);
 	 }
        }
      }

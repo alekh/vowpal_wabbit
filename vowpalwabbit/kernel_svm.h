@@ -9,6 +9,9 @@ license as described in the file LICENSE.
 #include <netdb.h>
 #endif
 
+#define SVM_KER_LIN 0
+#define SVM_KER_RBF 1
+
 #include "example.h"
 #include "v_array.h"
 #include "vw.h"
@@ -19,13 +22,18 @@ namespace KSVM
 {
 
   struct svm_model{    
-    int num_support;
-    v_array<example*> support_vec;
+    size_t num_support;
+    v_array<VW::flat_example*> support_vec;
     v_array<float> alpha;
     v_array<float> delta;
     float maxdelta;    
-  }
+  };
 
-  
+  void free_svm_model(svm_model*); 
+
+  learner setup(vw &all, std::vector<std::string>&opts, po::variables_map& vm, po::variables_map& vm_file);
+  void driver(vw* all, void* data);
+  void learn(void* d, example* ec);
+  void finish(void* d);
 
 }
