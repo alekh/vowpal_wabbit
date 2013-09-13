@@ -78,15 +78,16 @@ namespace VW {
     //   cerr<<feature_map[i].weight_index<<" ";
     // cerr<<endl;
     qsort(feature_map.begin, feature_map.size(), sizeof(feature), compare_feature);  
-    // cerr<<"After sort\n";
-    // for(int i = 0;i < feature_map.size();i++)
-    //   cerr<<feature_map[i].weight_index<<" ";
-    // cerr<<endl;
+    //cerr<<"After sort\n";
+    //for(int i = 0;i < feature_map.size();i++)
+    // cerr<<feature_map[i].weight_index<<" ";
+    //cerr<<endl;
     fec->feature_map_len = feature_map.size();
     if (fec->feature_map_len > 0)
       {
 	fec->feature_map = feature_map.begin;
       }
+    //cerr<<fec->feature_map_len<<endl;
 
     return fec;  
   }

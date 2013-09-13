@@ -193,7 +193,7 @@ namespace KSVM
   size_t suboptimality(svm_model* model, double* subopt) {
 
     int max_pos = 0;
-    cerr<<"Subopt ";
+    //cerr<<"Subopt ";
     double max_val = 0;
     for(size_t i = 0;i < model->num_support;i++) {
       label_data* ld = (label_data*)(model->support_vec[i]->ld);
@@ -209,9 +209,9 @@ namespace KSVM
 	  max_val = subopt[i];
 	  max_pos = i;
 	}
-	cerr<<subopt[i]<<" ";
+	//cerr<<subopt[i]<<" ";
       }    
-    cerr<<endl;
+    //cerr<<endl;
     return max_pos;
   }  
 
@@ -272,7 +272,7 @@ namespace KSVM
 
     double ai = (params->lambda - proj)/inprods[pos];
     
-    cerr<<model->num_support<<" "<<pos<<" "<<proj<<" "<<alphaKi<<" "<<alpha_old<<" "<<ld->label<<" "<<model->delta[pos]<<" ";
+    //cerr<<model->num_support<<" "<<pos<<" "<<proj<<" "<<alphaKi<<" "<<alpha_old<<" "<<ld->label<<" "<<model->delta[pos]<<" ";
 
     if(ai > ld->weight)				
       ai = ld->weight;
@@ -292,11 +292,11 @@ namespace KSVM
     }
     
     //cerr<<model->delta[pos]<<" "<<model->delta[pos]*ai<<" "<<diff<<" ";
-    cerr<<ai<<" "<<diff<<endl;
-    cerr<<"Inprods: ";
-    for(int i = 0;i < model->num_support;i++)
-      cerr<<inprods[i]<<" ";
-    cerr<<endl;
+    //cerr<<ai<<" "<<diff<<endl;
+    // cerr<<"Inprods: ";
+    // for(int i = 0;i < model->num_support;i++)
+    //   cerr<<inprods[i]<<" ";
+    // cerr<<endl;
     
     if(fabs(ai) <= 1.0e-10)
       remove(params, pos);
@@ -410,11 +410,10 @@ namespace KSVM
     svm_params* params = (svm_params*)d;
     
     VW::flat_example* fec = VW::flatten_example(*(params->all),ec);
-    cerr<<fec->feature_map_len<<endl;
     //cerr<<fec<<endl;
     
     if(fec) {
-      
+      //cerr<<fec->feature_map_len<<endl;
       params->pool[params->pool_pos] = fec;
       params->pool_pos++;
       
