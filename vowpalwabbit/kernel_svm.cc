@@ -253,9 +253,11 @@ namespace KSVM
 
   void update(svm_params* params, int pos) {
 
-    //cerr<<"Updating model "<<pos<<" "<<params->model->num_support<<endl;
-        
+    cerr<<"Update\n";
     svm_model* model = params->model;
+    cerr<<"Updating model "<<pos<<" "<<model->num_support<<" ";
+    cerr<<model->support_vec[pos]->example_counter<<endl;
+
     double* inprods = new double[model->num_support];
     VW::flat_example* fec = model->support_vec[pos];
     label_data* ld = (label_data*) fec->ld;
@@ -311,7 +313,7 @@ namespace KSVM
     model->maxdelta = subopt[max_pos];
     delete[] subopt;
     delete[] inprods;
-    //cerr<<model->alpha[pos]<<" "<<subopt[pos]<<endl;
+    cerr<<model->alpha[pos]<<" "<<subopt[pos]<<endl;
   }
 
   void train(svm_params* params) {
@@ -366,14 +368,16 @@ namespace KSVM
 	cerr<<"process: ";
 	int model_pos;
 	if(params->active)
-	  if(train_pool[i])
-	    model_pos = add(params, params->pool[train_pool[i]]);
+	  if(train_pool[i]) {
+	    cerr<<"i = "<<i<<"train_pool[i] = "<<train_pool[i]<<endl;
+	    model_pos = add(params, params->pool[i]);
+	  }
 	  else
 	    VW::free_flatten_example(params->pool[i]);
 	else
 	  model_pos = add(params, params->pool[i]);
 	cerr<<model_pos<<" ";
-	//cerr<<"Added: "<<&(model->support_vec[model_pos])<<endl;
+	cerr<<"Added: "<<model->support_vec[model_pos]->example_counter<<endl;
 	update(params, model_pos);
 
 	double* subopt = new double[model->num_support];
