@@ -173,16 +173,20 @@ namespace KSVM
   
   void compute_inprods(svm_params* params, const VW::flat_example* fec, double* inprods) {
     svm_model* model = params->model;
-    for(size_t i = 0 ;i < model->num_support;i++)
+    //cerr<<"Inprods\n";
+    for(size_t i = 0 ;i < model->num_support;i++) {      
+      //cerr<<i<<" "<<model->support_vec[i]->example_counter<<" "<<fec->example_counter<<endl;
       inprods[i] = kernel_function(fec, model->support_vec[i], params->kernel_params, params->kernel_type);
+      //cerr<<i<<":"<<inprods[i]<<" ";
+    }
+    //cerr<<endl;
     
   }
 
   void predict(svm_params* params, VW::flat_example** ec_arr, double* scores, size_t n) { 
     svm_model* model = params->model;
     double* inprods = new double[model->num_support];
-    
-    
+        
     for(size_t i = 0;i < n; i++) {
       compute_inprods(params, ec_arr[i], inprods);
       scores[i] = dense_dot(inprods, model->alpha, model->num_support)/params->lambda;
@@ -253,14 +257,15 @@ namespace KSVM
 
   void update(svm_params* params, int pos) {
 
-    cerr<<"Update\n";
+    //cerr<<"Update\n";
     svm_model* model = params->model;
-    cerr<<"Updating model "<<pos<<" "<<model->num_support<<" ";
-    cerr<<model->support_vec[pos]->example_counter<<endl;
+    //cerr<<"Updating model "<<pos<<" "<<model->num_support<<" ";
+    //cerr<<model->support_vec[pos]->example_counter<<endl;
 
     double* inprods = new double[model->num_support];
     VW::flat_example* fec = model->support_vec[pos];
     label_data* ld = (label_data*) fec->ld;
+    //cerr<<"Computing inprods\n";
     compute_inprods(params, fec, inprods);
     
     //cerr<<"Computed inprods\n";
@@ -294,7 +299,7 @@ namespace KSVM
     }
     
     //cerr<<model->delta[pos]<<" "<<model->delta[pos]*ai<<" "<<diff<<" ";
-    //cerr<<ai<<" "<<diff<<endl;
+    cerr<<ai<<" "<<diff<<endl;
     // cerr<<"Inprods: ";
     // for(int i = 0;i < model->num_support;i++)
     //   cerr<<inprods[i]<<" ";
@@ -313,16 +318,18 @@ namespace KSVM
     model->maxdelta = subopt[max_pos];
     delete[] subopt;
     delete[] inprods;
-    cerr<<model->alpha[pos]<<" "<<subopt[pos]<<endl;
+    //cerr<<model->alpha[pos]<<" "<<subopt[pos]<<endl;
   }
 
   void train(svm_params* params) {
     
     //cerr<<"In train "<<params->all->training<<endl;
     
-    bool* train_pool = new bool[params->pool_size];
+    bool* train_pool = (bool*)calloc(params->pool_size, sizeof(bool));
+    for(int i = 0;i < params->pool_size;i++)
+      train_pool[i] = 0;
     
-    double* scores = new double[params->pool_size];
+    double* scores = (double*)calloc(params->pool_size, sizeof(double));
     predict(params, params->pool, scores, params->pool_size);
 
     for(size_t i = 0;i < params->pool_size;i++) {
@@ -336,11 +343,17 @@ namespace KSVM
       if(params->active_pool_greedy) { 
 	map<double, int, std::greater<double> > scoremap;
 	for(size_t i = 0;i < params->pool_size; i++)
-	  scoremap[scores[i]] = i;
+	  scoremap[fabs(scores[i])] = i;
 
-	map<double, int, std::greater<double> >::iterator iter = scoremap.begin();
+	map<double, int>::iterator iter = scoremap.begin();
+	cerr<<params->pool_size<<" "<<"Scoremap: ";
+	for(;iter != scoremap.end();iter++)
+	  cerr<<iter->first<<" "<<iter->second<<" ";
+	cerr<<endl;
+	iter = scoremap.begin();
 	
 	for(size_t train_size = 1;iter != scoremap.end() && train_size <= params->subsample;train_size++) {
+	  //cerr<<train_size<<" "<<iter->second<<" "<<iter->first<<endl;
 	  train_pool[iter->second] = 1;
 	  iter++;	  
 	}
@@ -357,7 +370,7 @@ namespace KSVM
 	  }
 	}
       }
-      delete[] scores;
+      //free(scores);
     }
 
     if(params->all->training) {
@@ -365,49 +378,58 @@ namespace KSVM
       svm_model* model = params->model;
       
       for(size_t i = 0;i < params->pool_size;i++) {
-	cerr<<"process: ";
-	int model_pos;
+	cerr<<"process: "<<i<<" "<<train_pool[i]<<endl;;
+	int model_pos = -1;
 	if(params->active)
 	  if(train_pool[i]) {
-	    cerr<<"i = "<<i<<"train_pool[i] = "<<train_pool[i]<<endl;
+	    //cerr<<"i = "<<i<<"train_pool[i] = "<<train_pool[i]<<" "<<params->pool[i]->example_counter<<endl;
 	    model_pos = add(params, params->pool[i]);
 	  }
-	  else
+	  else {
 	    VW::free_flatten_example(params->pool[i]);
+	  }
 	else
 	  model_pos = add(params, params->pool[i]);
-	cerr<<model_pos<<" ";
-	cerr<<"Added: "<<model->support_vec[model_pos]->example_counter<<endl;
-	update(params, model_pos);
-
-	double* subopt = new double[model->num_support];
-	for(size_t j = 0;j < params->reprocess;j++) {
-	  if(model->num_support == 0) break;
-	  cerr<<"reprocess: ";
-	  double randi = 1;//rand()%2;
-	  if(randi) {
-	    size_t max_pos = suboptimality(model, subopt);
-	    
-	    if(subopt[max_pos] > 0) {
-	      if(max_pos == model_pos && max_pos > 0 && j == 0) 
-		cerr<<"Shouldn't reprocess right after process!!!\n";
-	      cerr<<max_pos<<" "<<subopt[max_pos]<<endl;	  
-	      update(params, max_pos);
+	// cerr<<model_pos<<" ";
+	// cerr<<"Added: "<<model->support_vec[model_pos]->example_counter<<endl;
+	if(model_pos >= 0) {
+	  update(params, model_pos);
+	  
+	  double* subopt = (double*)calloc(model->num_support,sizeof(double));
+	  for(size_t j = 0;j < params->reprocess;j++) {
+	    if(model->num_support == 0) break;
+	    cerr<<"reprocess: ";
+	    int randi = 1;//rand()%2;
+	    if(randi) {
+	      size_t max_pos = suboptimality(model, subopt);
+	      if(subopt[max_pos] > 0) {
+		if(max_pos == model_pos && max_pos > 0 && j == 0) 
+		  cerr<<"Shouldn't reprocess right after process!!!\n";
+		cerr<<max_pos<<" "<<subopt[max_pos]<<endl;
+		// cerr<<params->model->support_vec[0]->example_counter<<endl;
+		update(params, max_pos);
+	      }
 	    }
-	  }
-	  else {
-	    size_t rand_pos = rand()%model->num_support;
-	    update(params, rand_pos);
-	  }
+	    else {
+	      size_t rand_pos = rand()%model->num_support;
+	      update(params, rand_pos);
+	    }
+	  }	  
+	  cerr<<endl;
+	  // cerr<<params->model->support_vec[0]->example_counter<<endl;
+	  free(subopt);
 	}
-	cerr<<endl;
-	delete[] subopt;
       }
 
     }
-
-    delete[] scores;
-    delete[] train_pool;
+    // cerr<<params->model->support_vec[0]->example_counter<<endl;
+    // for(int i = 0;i < params->pool_size;i++)
+    //   cerr<<scores[i]<<" ";
+    // cerr<<endl;
+    free(scores);
+    //cerr<<params->model->support_vec[0]->example_counter<<endl;
+    free(train_pool);
+    //cerr<<params->model->support_vec[0]->example_counter<<endl;
   }
 
   void learn(void* d, example* ec) {
@@ -438,7 +460,7 @@ namespace KSVM
     while ( true ) {
       if ((ec = VW::get_example(all->p)) != NULL)//semiblocking operation.
 	{
-	  cerr<<"Sum sq = "<<ec->total_sum_feat_sq<<endl;
+	  //cerr<<"Sum sq = "<<ec->total_sum_feat_sq<<endl;
 	  learn(data, ec);
 	  return_simple_example(*all, ec);
 	}
