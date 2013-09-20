@@ -14,6 +14,7 @@ license as described in the file LICENSE.
   
 void vec_store(vw& all, void* p, float fx, uint32_t fi) {  
   feature f = {fx, fi};
+  //cout<<"feature "<<fi<<":"<<fx<<endl;
   (*(v_array<feature>*) p).push_back(f);  
 }  
   
@@ -73,50 +74,35 @@ namespace VW {
     
     v_array<feature> feature_map; //map to store sparse feature vectors  
     GD::foreach_feature<vec_store>(all, ec, &feature_map); 
-    // cerr<<"Before sort\n";
-    // for(int i = 0;i < feature_map.size();i++)
-    //   cerr<<feature_map[i].weight_index<<" ";
-    // cerr<<endl;
     qsort(feature_map.begin, feature_map.size(), sizeof(feature), compare_feature);  
-    //cerr<<"After sort\n";
-    //for(int i = 0;i < feature_map.size();i++)
-    // cerr<<feature_map[i].weight_index<<" ";
-    //cerr<<endl;
+    fec->total_sum_feat_sq = collision_cleanup(feature_map);
     fec->feature_map_len = feature_map.size();
     if (fec->feature_map_len > 0)
       {
 	fec->feature_map = feature_map.begin;
       }
-    //cerr<<fec->feature_map_len<<endl;
 
     return fec;  
   }
 
   int save_load_flat_example(io_buf& model_file, bool read, flat_example*& fec) {
     size_t brw = 1;
-    //cerr<<"Save load flat example "<<endl;
     if(read) {
       fec = (VW::flat_example*) calloc(1, sizeof(VW::flat_example));
-      //cerr<<"Done with calloc\n";
       brw = bin_read_fixed(model_file, (char*) fec, sizeof(VW::flat_example), "");
-      //cerr<<brw<<endl;
+
       if(brw > 0) {
 	fec->ld = (label_data*) calloc(1, sizeof(label_data));
 	brw = bin_read_fixed(model_file, (char*) fec->ld, sizeof(label_data), "");
 	if(!brw) return 4;
 	if(fec->tag_len > 0) {
-	  //cerr<<"Reading tag "<<fec->tag_len<<endl;
 	  fec->tag = (char*) calloc(fec->tag_len, sizeof(char));	
 	  brw = bin_read_fixed(model_file, (char*) fec->tag, fec->tag_len*sizeof(char), "");
 	  if(!brw) return 2;
-	  //cerr<<brw<<endl;	
 	}
 	if(fec->feature_map_len > 0) {
-	  //cerr<<"Reading feature map "<<fec->feature_map_len<<endl;
 	  fec->feature_map = (feature*) calloc(fec->feature_map_len, sizeof(feature));
-	  brw = bin_read_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature), "");   
-	  //cerr<<brw<<endl;
-	  if(!brw) return 3;
+	  brw = bin_read_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature), ""); 	  if(!brw) return 3;
 	}
       }
       else return 1;
@@ -137,15 +123,11 @@ namespace VW {
 	  }
 	}
 	if(fec->feature_map_len > 0) {
-	  //cerr<<"Writing feature map "<<fec->feature_map_len<<endl;
-	  brw = bin_write_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature));      
-	  //cerr<<"Done writing feature map\n";
-	  if(!brw) return 3;
+	  brw = bin_write_fixed(model_file, (char*) fec->feature_map, fec->feature_map_len*sizeof(feature));    	  if(!brw) return 3;
 	}
       }
       else return 1;
     }
-    //cerr<<"Example counter "<<fec->example_counter<<" "<<fec<<endl;
     return 0;
   }
 
@@ -153,15 +135,9 @@ namespace VW {
   void free_flatten_example(flat_example* fec) 
   {
     if(fec) {      
-      //cerr<<fec->ld<<endl;
-      //label_data* ld = (label_data*) fec->ld;
-      //cerr<<ld->label<<endl;
       if(fec->ld) free(fec->ld);
-      //cerr<<"Freed label\n";
       if(fec->tag) free(fec->tag);
-      //cerr<<"Freed tag\n";
       if(fec->feature_map) free(fec->feature_map);
-      //cerr<<"Freed feature_map\n";
 		  
       free(fec);
     }
@@ -169,6 +145,132 @@ namespace VW {
   }
 
 }
+
+
+int save_load_example(io_buf& model_file, bool read, example*& ec) {
+  size_t brw = 1;
+  if(read) {
+    ec = (example*) calloc(1, sizeof(example));      
+      
+    brw = bin_read_fixed(model_file, (char*) ec, sizeof(example), "");
+    if(brw > 0) {
+      size_t tag_len, indices_len, topic_predictions_len, atomics_len[256], audit_len[256];
+      
+      //first read lengths of all the v_arrays
+      brw = bin_read_fixed(model_file, (char*)&tag_len, sizeof(size_t), "");
+      brw = bin_read_fixed(model_file, (char*)&indices_len, sizeof(size_t), "");
+      brw = bin_read_fixed(model_file, (char*)atomics_len, 256*sizeof(size_t), "");
+      brw = bin_read_fixed(model_file, (char*)audit_len, 256*sizeof(size_t), "");
+      brw = bin_read_fixed(model_file, (char*)&topic_predictions_len, sizeof(size_t), "");
+      if(!brw)
+	return 7;
+
+      ec->ld = (label_data*) calloc(1, sizeof(label_data));
+      brw = bin_read_fixed(model_file, (char*) ec->ld, sizeof(label_data), "");
+      if(!brw) return 4;
+      if(tag_len > 0) {
+	ec->tag.resize(tag_len);
+	brw = bin_read_fixed(model_file, (char*) ec->tag.begin, tag_len*sizeof(char), "");
+	if(!brw) return 2;
+      }
+
+      if(indices_len > 0) {
+	ec->indices.resize(indices_len);
+	brw = bin_read_fixed(model_file, (char*) ec->indices.begin, indices_len*sizeof(unsigned char), "");
+	if(!brw) return 2;
+      }
+
+      for(int i = 0;i < 256;i++) {
+	if(atomics_len[i] > 0) {
+	  ec->atomics[i].resize(atomics_len[i]);
+	  brw = bin_read_fixed(model_file, (char*) ec->atomics[i].begin, atomics_len[i]*sizeof(feature), "");
+	  if(!brw) return 3;
+	}	    
+      }
+	
+      for(int i = 0;i < 256;i++) {
+	if(audit_len[i] > 0) {
+	  ec->audit_features[i].resize(audit_len[i]);
+	  brw = bin_read_fixed(model_file, (char*) ec->audit_features[i].begin, audit_len[i]*sizeof(audit_data), "");
+	  if(!brw) return 5;
+	}	    
+      }
+
+      if(topic_predictions_len > 0) {
+	ec->topic_predictions.resize(topic_predictions_len);
+	brw = bin_read_fixed(model_file, (char*) ec->topic_predictions.begin, topic_predictions_len*sizeof(float), "");
+	if(!brw) return 6;
+      }
+
+    }
+    else return 1;
+  }
+  else {
+    brw = bin_write_fixed(model_file, (char*) ec, sizeof(example));
+
+    if(brw > 0) {
+	
+      //first write lengths of all the v_arrays
+      size_t tag_len, indices_len, topic_predictions_len, atomics_len, audit_len; 
+      tag_len = ec->tag.size();
+      indices_len = ec->indices.size();
+      topic_predictions_len = ec->topic_predictions.size();
+	
+      brw = bin_write_fixed(model_file, (char*)&tag_len, sizeof(size_t));
+      brw = bin_write_fixed(model_file, (char*)&indices_len, sizeof(size_t));
+      for(int i = 0;i < 256;i++) {
+	atomics_len = ec->atomics[i].size();
+	brw = bin_write_fixed(model_file, (char*)&atomics_len, sizeof(size_t));
+      }
+      for(int i = 0;i < 256;i++) {
+	audit_len = ec->audit_features[i].size();
+	brw = bin_write_fixed(model_file, (char*)&audit_len, sizeof(size_t));
+      }
+      brw = bin_write_fixed(model_file, (char*)&topic_predictions_len, sizeof(size_t));
+      if(!brw) return 7;
+
+
+      if(ec->ld) {
+	brw = bin_write_fixed(model_file, (char*) ec->ld, sizeof(label_data));
+	if(!brw) return 4;
+      }
+
+      if(ec->tag.size() > 0) {
+	brw = bin_write_fixed(model_file, (char*) ec->tag.begin, ec->tag.size()*sizeof(char));
+	if(!brw) return 2;
+      }
+
+      if(ec->indices.size() > 0) {
+	brw = bin_write_fixed(model_file, (char*) ec->indices.begin, ec->indices.size()*sizeof(unsigned char));
+	if(!brw) return 2;
+      }
+
+      for(int i = 0;i < 256;i++) {
+	if(ec->atomics[i].size() > 0) {
+	  brw = bin_write_fixed(model_file, (char*) ec->atomics[i].begin, ec->atomics[i].size()*sizeof(feature));
+	  if(!brw) return 3;
+	}	    
+      }
+	
+      for(int i = 0;i < 256;i++) {
+	if(ec->audit_features[i].size() > 0) {
+	  brw = bin_write_fixed(model_file, (char*) ec->audit_features[i].begin, ec->audit_features[i].size()*sizeof(audit_data));
+	  if(!brw) return 5;
+	}	    
+      }
+
+      if(ec->topic_predictions.size() > 0) {
+	brw = bin_write_fixed(model_file, (char*) ec->topic_predictions.begin, ec->topic_predictions.size()*sizeof(float));
+	if(!brw) return 6;
+      }
+	
+    }
+    else return 1;
+  }
+  return 0;
+}
+
+
 
 example *alloc_example(size_t label_size)
 {

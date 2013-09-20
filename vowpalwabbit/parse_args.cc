@@ -280,10 +280,6 @@ vw* parse_args(int argc, char *argv[])
   if (vm.count("bfgs") || vm.count("conjugate_gradient")) 
     BFGS::setup(*all, to_pass_further, vm, vm_file);
 
-  if(vm.count("ksvm") || vm_file.count("ksvm")) {
-    cerr<<"Setting up KSVM\n";
-    all->l = KSVM::setup(*all, to_pass_further, vm, vm_file);
-  }
 
   if (vm.count("version") || argc == 1) {
     /* upon direct query for version -- spit it out to stdout */
@@ -439,6 +435,12 @@ vw* parse_args(int argc, char *argv[])
 
   po::store(parsed_file, vm_file);
   po::notify(vm_file);
+
+  if(vm.count("ksvm") || vm_file.count("ksvm")) {
+    cerr<<"Setting up KSVM\n";
+    all->reg.stride = 1;
+    all->l = KSVM::setup(*all, to_pass_further, vm, vm_file);
+  }
 
   for (size_t i = 0; i < 256; i++)
     all->ignore[i] = false;
@@ -906,5 +908,5 @@ namespace VW {
     all.final_prediction_sink.delete_v();
     delete all.loss;
     delete &all;
-  }
+  } 
 }

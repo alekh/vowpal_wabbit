@@ -48,4 +48,6 @@ struct node_socks {
 
 void all_reduce(float* buffer, int n, std::string master_location, size_t unique_id, size_t total, size_t node, node_socks& socks);
 
+void all_reduce(char* buffer, int n, std::string master_location, size_t unique_id, size_t total, size_t node, node_socks& socks);
+
 #endif

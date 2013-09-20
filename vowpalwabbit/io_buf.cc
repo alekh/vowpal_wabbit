@@ -92,15 +92,21 @@ void buf_write(io_buf &o, char* &pointer, size_t n)
       pointer = o.space.end;
       o.space.end += n;
     }
-  else // Time to dump the file
+  else 
     {
-      if (o.space.end != o.space.begin)
-	o.flush();
-      else // Array is short, so increase size.
-	{
-	  o.space.resize(2*(o.space.end_array - o.space.begin));
-	  o.endloaded = o.space.begin;
-	}
+      if(o.files.size() > 0) {
+	// Time to dump the file
+	if (o.space.end != o.space.begin)
+	  o.flush();
+	else // Array is short, so increase size.
+	  {
+	    o.space.resize(2*(o.space.end_array - o.space.begin));
+	    o.endloaded = o.space.begin;
+	  }
+      }
+      else
+	o.space.resize(2*(o.space.size() + n));
+	
       buf_write (o, pointer,n);
     }
 }

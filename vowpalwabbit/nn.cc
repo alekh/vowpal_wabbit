@@ -15,6 +15,7 @@ license as described in the file LICENSE.
 #include "v_hashmap.h"
 #include "rand48.h"
 #include "vw.h"
+#include "example.h"
 
 using namespace std;
 
@@ -34,6 +35,20 @@ namespace NN {
     bool inpass;
     bool finished_setup;
 
+    //active flags
+    bool active;
+    bool active_pool_greedy;
+    bool para_active;
+    bool training;
+
+    //pool maintainence
+    size_t pool_size;
+    size_t pool_pos;
+    size_t subsample; //NOTE: Eliminating subsample to only support 1/pool_size
+    example** pool;
+    size_t numqueries;
+
+  
     learner base;
     vw* all;
   };
@@ -75,6 +90,7 @@ namespace NN {
     }
 
   void finish_setup (nn* n, vw& all);
+
 
   void learn_with_output(vw& all, nn& n, example* ec, bool shouldOutput)
   {
@@ -138,14 +154,14 @@ namespace NN {
     float save_final_prediction = 0;
     float save_ec_loss = 0;
 
-CONVERSE: // That's right, I'm using goto.  So sue me.
+CONVERSE: // That's right, I'm using goto. So sue me.
 
     n.output_layer.total_sum_feat_sq = 1;
     n.output_layer.sum_feat_sq[nn_output_namespace] = 1;
 
     for (unsigned int i = 0; i < n.k; ++i)
       {
-        float sigmah = 
+        float sigmah =
           (dropped_out[i]) ? 0.0f : dropscale * fasttanh (hidden_units[i]);
         n.output_layer.atomics[nn_output_namespace][i].x = sigmah;
 
@@ -154,7 +170,7 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
       }
 
     if (n.inpass) {
-      // TODO: this is not correct if there is something in the 
+      // TODO: this is not correct if there is something in the
       // nn_output_namespace but at least it will not leak memory
       // in that case
 
@@ -192,7 +208,7 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
     }
 
     if (all.training && ld->label != FLT_MAX) {
-      float gradient = all.loss->first_derivative(all.sd, 
+      float gradient = all.loss->first_derivative(all.sd,
                                                   n.output_layer.final_prediction,
                                                   ld->label);
 
@@ -207,14 +223,14 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
         for (unsigned int i = 0; i < n.k; ++i) {
           update_example_indicies (all.audit, ec, n.increment);
           if (! dropped_out[i]) {
-            float sigmah = 
+            float sigmah =
               n.output_layer.atomics[nn_output_namespace][i].x / dropscale;
             float sigmahprime = dropscale * (1.0f - sigmah * sigmah);
             float nu = all.reg.weight_vector[n.output_layer.atomics[nn_output_namespace][i].weight_index & all.reg.weight_mask];
             float gradhw = 0.5f * nu * gradient * sigmahprime;
 
             ld->label = GD::finalize_prediction (all, hidden_units[i] - gradhw);
-            if (ld->label != hidden_units[i]) 
+            if (ld->label != hidden_units[i])
               n.base.learn(ec);
           }
         }
@@ -250,37 +266,189 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
     ec->final_prediction = save_final_prediction;
     ec->loss = save_ec_loss;
   }
-
   void learn(void* d,example* ec) {
     nn* n = (nn*)d;
     vw* all = n->all;
+    
     learn_with_output(*all, *n, ec, false);
+    
+  }
+
+
+  void sync_queries(vw& all, nn& n, bool* train_pool) {
+    io_buf b;
+    char* queries;
+    
+    for(int i = 0;i < n.pool_pos;i++) {
+      if(!train_pool[i])
+	continue;
+      //b.init();
+      
+      cache_simple_label(n.pool[i]->ld, b);      
+      cache_features(b, n.pool[i], mask);
+    }
+    
+    float* sizes = (float*)calloc(all.total,sizeof(float));
+    sizes[all.unique_id] = b.space.size();
+    allreduce(sizes, all.total, all.master_location, all.unique_id, all.total, all.node, all.socks); 
+    
+    int prev_sum = 0, total_sum = 0;
+    for(size_t i = 0;i < all.total;i++) {
+      if(i < unique_id-1)	
+	prev_sum += sizes[i];
+      total_sum += sizes[i];
+    }
+    
+    queries = (char*)calloc(total_sum, sizeof(char));
+    memcpy(queries + prev_sum, b.space.begin, b.space.size());
+    allreduce(queries, total_sum, all.master_location, all.unique_id, all.total, all.node, all.socks); 
+
+    io_buf* save_in = all.p->in;
+    //size_t read_sum = 0;
+    all.p->in = b;
+    b.space.begin = queries;
+    b.space.end = b.space.begin;
+    b.endloaded = queries.end;
+    for(size_t i = 0;i < n.pool_size, n.pool_pos++;i++) {      
+      n.pool[i] = (example*) calloc(1, sizeof(example));
+      if(read_cached_features(all, n.pool[i]))
+	train_pool[i] = true;
+      else
+	break;
+    }
+  }
+
+
+  void predict_and_learn(vw& all, nn& n,  bool shouldOutput) {
+    
+    float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
+    bool* train_pool = (bool*)calloc(n.pool_pos, sizeof(bool));
+
+    if(n.active) {
+      float gradsum = 0;
+      for(int idx = 0;idx < n.pool_pos;idx++) {
+	example* ec = n.pool[idx];
+	
+	if (! n.finished_setup)
+	  finish_setup (&n, all);
+	
+	if (command_example(&all, ec)) {
+	  n.base.learn(ec);
+	  break;
+	}
+	
+	label_data* ld = (label_data*) ec->ld;
+	float save_label = ld->label;
+	ld->label = FLT_MAX;
+	
+	learn_with_output(all, n, ec, shouldOutput);
+	ld->label = save_label;
+	gradients[idx] = fabs(all.loss->first_derivative(all.sd, ec->final_prediction, ld->label));      
+	gradsum += gradients[idx];
+	ec->loss = all.loss->getLoss(all.sd, ec->final_prediction, ld->label);
+      }
+      
+      multimap<float, int, std::greater<float> > scoremap;
+      for(int i = 0;i < (&n)->pool_pos; i++)
+	scoremap.insert(pair<const float, const int>(gradients[i],i));
+      
+      multimap<float, int, std::greater<float> >::iterator iter = scoremap.begin();
+      float* queryp = (float*)calloc(n.pool_pos, sizeof(float));
+      float querysum = 0;
+      
+      for(int i = 0;i < n.pool_pos;i++) {
+	queryp[i] = min<float>(gradients[i]/gradsum * (float)n.subsample, 1.0);
+	//cerr<<queryp[i]<<":"<<gradients[i]/gradsum * (float)n.subsample<<" ";
+	querysum += queryp[i];
+      }
+
+      float residual = n.subsample - querysum;
+      
+      for(;iter != scoremap.end() && residual > 0;iter++) {
+	if(queryp[iter->second] + residual <= 1) {
+	  queryp[iter->second] += residual;
+	  residual = 0;
+	}
+	else {
+	  residual -= (1 - queryp[iter->second]);
+	  queryp[iter->second] = 1;
+	}
+	
+      }
+
+      int num_train = 0;
+
+      for(int i = 0;i < n.pool_pos && num_train < n.subsample;i++)
+	if(frand48() < queryp[i]) {
+	  train_pool[i] = 1;
+	  label_data* ld = (label_data*) n.pool[i]->ld;
+	  ld->weight = 1/queryp[i];
+	  n.numqueries++;
+	  num_train++;
+	}
+
+      // for(int i = 0; i < n.pool_pos;i++) 
+      // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
+      // cerr<<endl;
+
+      free(queryp);
+    }
+
+    if(n.para_active) 
+      sync_queries(all, n, train_pool);
+
+    for(int i = 0;i < n.pool_pos;i++) {
+      if(n.active && !train_pool[i])
+	continue;
+      
+      example* ec = n.pool[i];
+      learn_with_output(all, n, ec, shouldOutput);
+      if(n.para_active)
+	return_simple_example(*all, n.pool[i]);
+      
+    }
+    
+    free(train_pool);
+    free(gradients);
   }
 
   void drive_nn(vw *all, void* d)
   {
     nn* n = (nn*)d;
-    example* ec = NULL;
+    example** ec_arr = (example**)calloc(n->pool_size, sizeof(example*));
+    for(int i = 0;i < n->pool_size;i++)
+      ec_arr[i] = NULL;
+    
     while ( true )
       {
-        if ((ec = VW::get_example(all->p)) != NULL)//semiblocking operation.
-          {
-            learn_with_output(*all, *n, ec, all->raw_prediction > 0);
-            int save_raw_prediction = all->raw_prediction;
-            all->raw_prediction = -1;
-            return_simple_example(*all, ec);
-            all->raw_prediction = save_raw_prediction;
-          }
-        else if (parser_done(all->p))
-	  return;
-        else 
-          ;
+	for(int i = 0;i < n->pool_size;i++) {
+	  if ((ec_arr[i] = VW::get_example(all->p)) != NULL)//semiblocking operation.
+	    {
+	      n->pool[i] = ec_arr[i];
+	      n->pool_pos++;
+	    }
+	  else 
+	    break;
+	}
+	
+	predict_and_learn(*all, *n, false);
+	for(int i = 0;i < n->pool_pos;i++) {
+	  int save_raw_prediction = all->raw_prediction;
+	  all->raw_prediction = -1;
+	  return_simple_example(*all, ec_arr[i]);
+	  all->raw_prediction = save_raw_prediction;			  
+	}
+	n->pool_pos = 0;
+	if(parser_done(all->p))
+	   return;
       }
   }
 
   void finish(void* d)
   {
     nn* n =(nn*)d;
+    if(n->active)
+      cerr<<"Number of label queries = "<<n->numqueries<<endl;
     n->base.finish();
     delete n->squared_loss;
     free (n->output_layer.indices.begin);
@@ -295,6 +463,10 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
 
     po::options_description desc("NN options");
     desc.add_options()
+      ("pool_greedy", "use greedy selection on mini pools")
+      ("para_active", "do parallel active learning")
+      ("pool_size", po::value<size_t>(), "size of pools for active learning")
+      ("subsample", po::value<size_t>(), "number of items to subsample from the pool")
       ("inpass", "Train or test sigmoidal feedforward network with input passthrough.")
       ("dropout", "Train or test sigmoidal feedforward network using dropout.")
       ("meanfield", "Train or test sigmoidal feedforward network using mean field.");
@@ -311,6 +483,39 @@ CONVERSE: // That's right, I'm using goto.  So sue me.
       options(desc).allow_unregistered().run();
     po::store(parsed_file, vm_file);
     po::notify(vm_file);
+
+    n->training = all.training;
+    n->active = all.active_simulation;        
+    all.active_simulation = false;
+    all.l.finish();
+    all.l = GD::setup(all, vm);
+    if(n->active) {
+      if(vm.count("pool_greedy"))
+	n->active_pool_greedy = 1;
+      if(vm.count("para_active"))
+	n->para_active = 1;
+      n->numqueries = 0;
+      cerr<<"C0 = "<<all.active_c0<<endl;
+    }
+    
+    if(vm_file.count("pool_size"))
+      n->pool_size = vm_file["pool_size"].as<std::size_t>();
+    else if(vm.count("pool_size")) 
+      n->pool_size = vm["pool_size"].as<std::size_t>();
+    else
+      n->pool_size = 1;
+    
+    n->pool = (example**)calloc(n->pool_size, sizeof(example*));
+    n->pool_pos = 0;
+    
+    if(vm_file.count("subsample"))
+      n->subsample = vm["subsample"].as<std::size_t>();
+      else if(vm.count("subsample"))
+	n->subsample = vm["subsample"].as<std::size_t>();
+      else if(n->para_active)
+	n->subsample = ceil(n->pool_size / all.total);
+      else
+	n->subsample = 1;
 
     //first parse for number of hidden units
     n->k = 0;

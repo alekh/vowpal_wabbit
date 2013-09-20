@@ -65,19 +65,20 @@ struct vw;
 namespace VW {
 struct flat_example 
 {
-	void* ld;  
-	simple_prediction final_prediction;  
-
-	int tag_len;
-	char* tag;//An identifier for the example.  
-
-	size_t example_counter;  
-	uint32_t ft_offset;  
-	float global_weight;
-
-	size_t num_features;//precomputed, cause it's fast&easy.  
-	int feature_map_len;
-	feature* feature_map; //map to store sparse feature vectors  
+  void* ld;  
+  simple_prediction final_prediction;  
+  
+  int tag_len;
+  char* tag;//An identifier for the example.  
+  
+  size_t example_counter;  
+  uint32_t ft_offset;  
+  float global_weight;
+  float total_sum_feat_sq;
+  
+  size_t num_features;//precomputed, cause it's fast&easy.  
+  int feature_map_len;
+  feature* feature_map; //map to store sparse feature vectors  
 };
  flat_example* flatten_example(vw& all, example *ec);
  int save_load_flat_example(io_buf& buf, bool read, flat_example*& fec);
@@ -89,5 +90,6 @@ void dealloc_example(void(*delete_label)(void*), example&);
 
 void update_example_indicies(bool audit, example* ec, uint32_t amount);
 bool command_example(void*a, example* ec); 
+int save_load_example(io_buf& model_file, bool read, example*& ec);
 
 #endif

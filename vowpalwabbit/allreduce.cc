@@ -395,3 +395,11 @@ void all_reduce(float* buffer, const int n, const string master_location, const 
   broadcast((char*)buffer, n*sizeof(float), socks.parent, socks.children);
 }
 
+void all_reduce(char* buffer, const int n, const string master_location, const size_t unique_id, const size_t total, const size_t node, node_socks& socks) 
+{
+  if(master_location != socks.current_master) 
+    all_reduce_init(master_location, unique_id, total, node, socks);
+  reduce(buffer, n, socks.parent, socks.children);
+  broadcast(buffer, n, socks.parent, socks.children);
+}
+

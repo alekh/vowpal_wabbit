@@ -21,12 +21,22 @@ using namespace std;
 namespace KSVM
 {
 
+  struct svm_params;
+
+  struct svm_example : public VW::flat_example {
+    v_array<float> krow;
+
+    ~svm_example();
+    svm_example(VW::flat_example *fec); 
+    int compute_kernels(svm_params *params);
+    int clear_kernels();
+  };
+
   struct svm_model{    
     size_t num_support;
-    v_array<VW::flat_example*> support_vec;
+    v_array<svm_example*> support_vec;
     v_array<float> alpha;
     v_array<float> delta;
-    float maxdelta;    
   };
 
   void free_svm_model(svm_model*); 
