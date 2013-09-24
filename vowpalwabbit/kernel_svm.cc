@@ -450,7 +450,7 @@ namespace KSVM
       remove(params, pos);
     else {
       model->alpha[pos] = ai;
-      cerr<<ai<<" "<<model->alpha[pos]<<endl;
+      //cerr<<ai<<" "<<model->alpha[pos]<<endl;
     }
     
 
@@ -594,7 +594,7 @@ namespace KSVM
       svm_model* model = params->model;
       
       for(size_t i = 0;i < params->pool_pos;i++) {
-	cerr<<"process: "<<i<<" "<<train_pool[i]<<endl;;
+	//cerr<<"process: "<<i<<" "<<train_pool[i]<<endl;;
 	int model_pos = -1;
 	if(params->active) {
 	  if(train_pool[i]) {
@@ -614,7 +614,7 @@ namespace KSVM
 	  double* subopt = (double*)calloc(model->num_support,sizeof(double));
 	  for(size_t j = 0;j < params->reprocess;j++) {
 	    if(model->num_support == 0) break;
-	    cerr<<"reprocess: ";
+	    //cerr<<"reprocess: ";
 	    int randi = 1;//rand()%2;
 	    if(randi) {
 	      size_t max_pos = suboptimality(model, subopt);

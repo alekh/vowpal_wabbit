@@ -53,6 +53,11 @@ namespace NN {
     size_t local_begin, local_end;
     size_t current_t;
 
+    std::string* span_server;
+    size_t unique_id; //unique id for each node in the network, id == 0 means extra io.
+    size_t total; //total number of nodes
+    size_t node; //node id number
+    node_socks* socks;
   
     learner base;
     vw* all;
@@ -324,7 +329,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     io_buf* b = new io_buf();
 
     char* queries;
-    cerr<<"Syncing"<<endl;
+    //cerr<<"Syncing"<<endl;
     
 
     for(int i = 0;i < n.pool_pos;i++) {
@@ -333,58 +338,58 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       //cerr<<n.pool[i]->example_counter<<endl;
       cache_simple_label(n.pool[i]->ld, *b);      
       cache_features(*b, n.pool[i], all.reg.weight_mask);
-      cerr<<"Writing\n";
+      //cerr<<"Writing\n";
       //save_load_example(*b, false, n.pool[i]);
       // cerr<<"***********Before**************\n";
       // print_example(&all, n.pool[i]);
     }
     
-    float* sizes = (float*)calloc(all.total,sizeof(float));
-    sizes[all.node] = b->space.end - b->space.begin;
-    cerr<<"Local size = "<<sizes[all.node]<<endl;
-    all_reduce(sizes, all.total, all.span_server, all.unique_id, all.total, all.node, all.socks); 
+    float* sizes = (float*)calloc(n.total,sizeof(float));
+    sizes[n.node] = b->space.end - b->space.begin;
+    //cerr<<"Local size = "<<sizes[all.node]<<endl;
+    all_reduce(sizes, n.total, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
     //cerr<<"Done with first allreduce\n";
 
-    cerr<<"Sizes: ";
+    //cerr<<"Sizes: ";
     int prev_sum = 0, total_sum = 0;
-    for(int i = 0;i < all.total;i++) {
-      if(i <= (int)(all.node-1)) {	
+    for(int i = 0;i < n.total;i++) {
+      if(i <= (int)(n.node-1)) {	
     	prev_sum += sizes[i];
       }
       total_sum += sizes[i];
-      cerr<<sizes[i]<<" ";
+      //cerr<<sizes[i]<<" ";
     }
-    cerr<<endl;
-    cerr<<"Prev sum = "<<prev_sum<<" total_sum = "<<total_sum<<endl;
+    //cerr<<endl;
+    //cerr<<"Prev sum = "<<prev_sum<<" total_sum = "<<total_sum<<endl;
 
     if(total_sum > 0) {
       size_t ar_sum = total_sum + (sizeof(float) - total_sum % sizeof(float)) % sizeof(float);
       queries = (char*)calloc(ar_sum, sizeof(char));
       memset(queries, '\0', ar_sum);
       memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
-      cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
+      //cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
       b->space.delete_v();
       //cerr<<"Entering second allreduce\n";
-      all_reduce(queries, ar_sum, all.span_server, all.unique_id, all.total, all.node, all.socks); 
+      all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
-      cerr<<"Done with second allreduce\n";
+      //cerr<<"Done with second allreduce\n";
       
       b->space.begin = queries;
       b->space.end = b->space.begin;
       b->endloaded = &queries[total_sum*sizeof(char)];
 
-      cerr<<"Before reading: "<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
+      //cerr<<"Before reading: "<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
 
       size_t num_read = 0;
       n.pool_pos = 0;
       for(size_t i = 0;i < n.pool_size && num_read < total_sum; n.pool_pos++,i++) {            
     	n.pool[i] = (example*) calloc(1, sizeof(example));
     	n.pool[i]->ld = calloc(1, sizeof(simple_label));
-	cerr<<"i = "<<i<<" "<<num_read<<endl;
+	//cerr<<"i = "<<i<<" "<<num_read<<endl;
     	if(read_cached_features(&all, *b, n.pool[i])) {
 	  //if(!save_load_example(*b, true, n.pool[i])) {
-	  cerr<<"***********After**************\n";
+	  //cerr<<"***********After**************\n";
     	  train_pool[i] = true;
     	  n.pool[i]->in_use = true;	
 	  n.current_t += ((label_data*) n.pool[i]->ld)->weight;
@@ -393,17 +398,17 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	}
     	else
     	  break;
-	cerr<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
+	//cerr<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
     	num_read = min(b->space.end - b->space.begin,b->endloaded - b->space.begin);
     	if(num_read == prev_sum)
     	  n.local_begin = i+1;
-    	if(num_read == prev_sum + sizes[all.node])
+    	if(num_read == prev_sum + sizes[n.node])
     	  n.local_end = i;
-	cerr<<"num_read = "<<num_read<<endl;
+	//cerr<<"num_read = "<<num_read<<endl;
       }
     }
 
-    cerr<<"Synced\n";
+    //cerr<<"Synced\n";
     free(sizes);
     delete b;
   }
@@ -554,6 +559,12 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	n->pool_pos = 0;
 	if(parser_done(all->p)) {
 	  free(ec_arr);
+	   if(n->para_active) {
+	     all_reduce(&all->sd->example_number, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
+	     all_reduce(&all->sd->weighted_examples, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
+	     all_reduce(&all->sd->sum_loss, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
+	     cerr<<"Loss "<<all->sd->sum_loss<<" "<<all->sd->weighted_examples<<endl;
+    }
 	   return;
 	}
       }
@@ -566,14 +577,14 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     nn* n =(nn*)d;
     vw* all = n->all;
     if(n->active)
-      cerr<<"Number of label queries = "<<n->numqueries<<endl;
-    // if(n->para_active)
-    //   accumulate_scalar(*all, all->span_server, all->sd->sum_loss);
+      cerr<<"Number of label queries = "<<n->numqueries<<endl;   
     n->base.finish();
     delete n->squared_loss;
     free (n->output_layer.indices.begin);
     free (n->output_layer.atomics[nn_output_namespace].begin);
     free(n->pool);
+    delete n->socks;
+    delete n->span_server;
     free(n);
   }
 
@@ -581,6 +592,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
   {
     nn* n = (nn*)calloc(1,sizeof(nn));
     n->all = &all;
+    cerr<<"Size = "<<sizeof(nn)<<" "<<sizeof(std::string)<<" "<<sizeof(n->span_server)<<endl;
 
     po::options_description desc("NN options");
     desc.add_options()
@@ -607,9 +619,6 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 
     n->training = all.training;
     n->active = all.active_simulation;        
-    all.active_simulation = false;
-    all.l.finish();
-    all.l = GD::setup(all, vm);
     if(n->active) {
       if(vm.count("pool_greedy"))
 	n->active_pool_greedy = 1;
@@ -619,7 +628,34 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       //cerr<<"C0 = "<<all.active_c0<<endl;
       if(n->para_active)
 	n->current_t = 0;
+      all.l.finish();
     }
+    
+    cerr<<"Finished base learner\n";
+    if(n->para_active) {
+      n->span_server = new std::string(all.span_server);
+      //>span_server.assign(all.span_server.c_str());
+      n->total = all.total;
+      n->unique_id = all.unique_id;
+      n->node = all.node;
+      n->socks = new node_socks();
+      n->socks->current_master = all.socks.current_master;
+      // if(all.socks.parent)
+      // 	n->socks->parent = all.socks.parent;
+      // if(all.socks.children) {
+      // 	n->socks->children[0] = all.socks.children[0];
+      // 	n->socks->children[1] = all.socks.children[1];
+      //}
+      all.span_server = "";
+      all.total = 0;      
+      //delete &all.socks;
+    }
+    cerr<<"Copied fields from all\n";
+    //cerr<<*n->span_server<<" "<<n->total<<" "<<n->unique_id<<" "<<n->node<<" "<<n->socks->current_master<<endl; 
+	
+    all.active_simulation = false;   
+    cerr<<"Calling setup again\n";
+    all.l = GD::setup(all, vm);
     
     if(vm_file.count("pool_size"))
       n->pool_size = vm_file["pool_size"].as<std::size_t>();
@@ -636,7 +672,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       else if(vm.count("subsample"))
 	n->subsample = vm["subsample"].as<std::size_t>();
       else if(n->para_active)
-	n->subsample = ceil(n->pool_size / all.total);
+	n->subsample = ceil(n->pool_size / n->total);
       else
 	n->subsample = 1;
     cerr<<"Subsample = "<<n->subsample<<endl;

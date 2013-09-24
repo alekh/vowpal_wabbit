@@ -104,6 +104,7 @@ void all_reduce_init(const string master_location, const size_t unique_id, const
     throw exception();
   }
   socks.current_master = master_location;
+  cerr<<"Contacting master "<<master_location<<endl;
 
   uint32_t master_ip = * ((uint32_t*)master->h_addr);
   int port = 26543;
