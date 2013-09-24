@@ -8,14 +8,14 @@ license as described in the file LICENSE.
 #include "io_buf.h"
 
 size_t buf_read(io_buf &i, char* &pointer, size_t n)
-{//return a pointer to the next n bytes.  n must be smaller than the maximum size.
+{//return a pointer to the next n bytes.  n must be smaller than the maximum size.  
   if (i.space.end + n <= i.endloaded)
     {
       pointer = i.space.end;
       i.space.end += n;
       return n;
     }
-  else // out of bytes, so refill.
+  else if(i.files.size() > 0) // out of bytes, so refill.
     {
       if (i.space.end != i.space.begin) //There exists room to shift.
 	{ // Out of buffer so swap to beginning.

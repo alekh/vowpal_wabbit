@@ -44,4 +44,8 @@ void set_compressed(parser* par);
 void initialize_examples(vw& all);
 void free_parser(vw& all);
 
+namespace VW{
+  void empty_example(vw& all, example* ec);
+}
+
 #endif

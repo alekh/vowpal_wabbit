@@ -56,6 +56,9 @@ namespace KSVM
 
     void* kernel_params;
     size_t kernel_type;
+
+    size_t local_begin, local_end;
+    size_t current_t;
     
     vw* all;
   };
@@ -96,14 +99,17 @@ namespace KSVM
 	//computing new kernel values and caching them
 	//if(params->curcache + n > params->maxcache)
 	//trim_cache(params);
-	  num_kernel_evals += krow.size();
+	num_kernel_evals += krow.size();
+	//cerr<<"Kernels ";
 	for (int i=krow.size(); i<n; i++)
 	  {	    
 	    svm_example *sec = model->support_vec[i];
 	    float kv = kernel_function(this, sec, params->kernel_params, params->kernel_type);
 	    krow.push_back(kv);
 	    alloc += 1;
+	    //cerr<<kv<<" ";
 	  }
+	//cerr<<endl;
       }
     else
       num_cache_evals += n;
@@ -284,6 +290,12 @@ namespace KSVM
     return dotprod;
   }
 
+  float poly_kernel(const VW::flat_example* fec1, const VW::flat_example* fec2, int power) {
+    float dotprod = linear_kernel(fec1, fec2);    
+    //cerr<<"Bandwidth = "<<bandwidth<<endl;
+    return pow(1 + dotprod, power);
+  }
+
   float rbf_kernel(const VW::flat_example* fec1, const VW::flat_example* fec2, double bandwidth) {
     float dotprod = linear_kernel(fec1, fec2);    
     //cerr<<"Bandwidth = "<<bandwidth<<endl;
@@ -438,7 +450,7 @@ namespace KSVM
       remove(params, pos);
     else {
       model->alpha[pos] = ai;
-      //cerr<<ai<<" "<<model->alpha[pos]<<endl;
+      cerr<<ai<<" "<<model->alpha[pos]<<endl;
     }
     
 
@@ -451,6 +463,79 @@ namespace KSVM
     //cerr<<model->alpha[pos]<<" "<<subopt[pos]<<endl;
   }
 
+
+  void sync_queries(vw& all, svm_params& params, bool* train_pool) {
+    io_buf* b = new io_buf();
+    
+    char* queries;
+    VW::flat_example* fec;
+
+    for(int i = 0;i < params.pool_pos;i++) {
+      if(!train_pool[i])
+	continue;
+      
+      fec = params.pool[i];
+      save_load_flat_example(*b, false, fec);
+      delete params.pool[i];
+      
+    }
+
+    float* sizes = (float*) calloc(all.total, sizeof(float));
+    sizes[all.node] = b->space.end - b->space.begin;
+    //cerr<<"Sizes = "<<sizes[all.node]<<" ";
+    all_reduce(sizes, all.total, all.span_server, all.unique_id, all.total, all.node, all.socks);
+
+    int prev_sum = 0, total_sum = 0;
+    for(int i = 0;i < all.total;i++) {
+      if(i <= (int)(all.node - 1))
+	prev_sum += sizes[i];
+      total_sum += sizes[i];
+    }
+    
+    //cerr<<total_sum<<" "<<prev_sum<<endl;
+    if(total_sum > 0) {
+      queries = (char*) calloc(total_sum, sizeof(char));
+      memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
+      b->space.delete_v();
+      all_reduce(queries, total_sum, all.span_server, all.unique_id, all.total, all.node, all.socks);
+
+      b->space.begin = queries;
+      b->space.end = b->space.begin;
+      b->endloaded = &queries[total_sum*sizeof(char)];
+
+      size_t num_read = 0;
+      params.pool_pos = 0;
+      
+      for(size_t i = 0;i < params.pool_size; i++) {	
+	if(!save_load_flat_example(*b, true, fec)) {
+	  params.pool[i] = new svm_example(fec);
+	  train_pool[i] = true;
+	  params.pool_pos++;
+	  // for(int j = 0;j < fec->feature_map_len;j++)
+	  //   cerr<<fec->feature_map[j].weight_index<<":"<<fec->feature_map[j].x<<" ";
+	  // cerr<<endl;
+	  // params.pool[i]->in_use = true;
+	  // params.current_t += ((label_data*) params.pool[i]->ld)->weight;
+	  // params.pool[i]->example_t = params.current_t;
+	}
+	else
+	  break;
+	
+	num_read += b->space.end - b->space.begin;
+	if(num_read == prev_sum)
+	  params.local_begin = i+1;
+	if(num_read == prev_sum + sizes[all.node])
+	  params.local_end = i;	
+      }
+    }
+    if(fec)
+      free(fec);
+    free(sizes);
+    delete b;
+
+  }
+
+
   void train(svm_params* params) {
     
     //cerr<<"In train "<<params->all->training<<endl;
@@ -459,14 +544,14 @@ namespace KSVM
     for(int i = 0;i < params->pool_size;i++)
       train_pool[i] = false;
     
-    double* scores = (double*)calloc(params->pool_size, sizeof(double));
-    predict(params, params->pool, scores, params->pool_size);
+    double* scores = (double*)calloc(params->pool_pos, sizeof(double));
+    predict(params, params->pool, scores, params->pool_pos);
     
       
     if(params->active) {           
       if(params->active_pool_greedy) { 
 	multimap<double, int> scoremap;
-	for(int i = 0;i < params->pool_size; i++)
+	for(int i = 0;i < params->pool_pos; i++)
 	  scoremap.insert(pair<const double, const int>(fabs(scores[i]),i));
 
 	multimap<double, int>::iterator iter = scoremap.begin();
@@ -484,7 +569,7 @@ namespace KSVM
       }
       else {
 
-	for(size_t i = 0;i < params->pool_size;i++) {
+	for(size_t i = 0;i < params->pool_pos;i++) {
 	  double queryp = 2.0/(1.0 + exp(params->all->active_c0*fabs(scores[i])*pow(params->pool[i]->example_counter,0.5)));
 	  if(rand() < queryp) {
 	    svm_example* fec = params->pool[i];
@@ -497,25 +582,30 @@ namespace KSVM
       //free(scores);
     }
 
+    for(int i = 0;i < params->pool_pos;i++)
+      if(!train_pool[i])
+	delete params->pool[i];
+
+    if(params->para_active)
+      sync_queries(*(params->all), *params, train_pool);
+
     if(params->all->training) {
       
       svm_model* model = params->model;
       
-      for(size_t i = 0;i < params->pool_size;i++) {
-	//cerr<<"process: "<<i<<" "<<train_pool[i]<<endl;;
+      for(size_t i = 0;i < params->pool_pos;i++) {
+	cerr<<"process: "<<i<<" "<<train_pool[i]<<endl;;
 	int model_pos = -1;
-	if(params->active)
+	if(params->active) {
 	  if(train_pool[i]) {
 	    //cerr<<"i = "<<i<<"train_pool[i] = "<<train_pool[i]<<" "<<params->pool[i]->example_counter<<endl;
 	    model_pos = add(params, params->pool[i]);
 	  }
-	  else {
-	    delete params->pool[i];
-	  }
+	}
 	else
 	  model_pos = add(params, params->pool[i]);
 	
-	// cerr<<"Added: "<<model->support_vec[model_pos]->example_counter<<endl;
+	//cerr<<"Added: "<<model->support_vec[model_pos]->example_counter<<endl;
 	
 	if(model_pos >= 0) {
 	  bool overshoot = update(params, model_pos);
@@ -524,7 +614,7 @@ namespace KSVM
 	  double* subopt = (double*)calloc(model->num_support,sizeof(double));
 	  for(size_t j = 0;j < params->reprocess;j++) {
 	    if(model->num_support == 0) break;
-	    //cerr<<"reprocess: ";
+	    cerr<<"reprocess: ";
 	    int randi = 1;//rand()%2;
 	    if(randi) {
 	      size_t max_pos = suboptimality(model, subopt);
@@ -551,7 +641,7 @@ namespace KSVM
 
     }
     else
-      for(size_t i = 0;i < params->pool_size;i++)
+      for(size_t i = 0;i < params->pool_pos;i++)
 	delete params->pool[i];
 	
     // cerr<<params->model->support_vec[0]->example_counter<<endl;
@@ -675,6 +765,7 @@ namespace KSVM
       ("subsample", po::value<size_t>(), "number of items to subsample from the pool")
       ("kernel", po::value<string>(), "type of kernel (rbf or linear (default))")
       ("bandwidth", po::value<double>(), "bandwidth of rbf kernel")
+      ("degree", po::value<int>(), "degree of poly kernel")
       ("lambda", po::value<double>(), "saving regularization for test time");
 
     po::parsed_options parsed = po::command_line_parser(opts).
@@ -727,6 +818,8 @@ namespace KSVM
       params->subsample = vm["subsample"].as<std::size_t>();
       else if(vm.count("subsample"))
 	params->subsample = vm["subsample"].as<std::size_t>();
+      else if(params->para_active)
+	params->subsample = ceil(params->pool_size / all.total);
       else
 	params->subsample = 1;
     
@@ -790,6 +883,26 @@ namespace KSVM
       params->kernel_params = calloc(1,sizeof(double*));
       *((double*)params->kernel_params) = bandwidth;
       //cerr<<(*(double*)params->kernel_params)<<endl;
+    }
+    else if(kernel_type.compare("poly") == 0) {
+      params->kernel_type = SVM_KER_POLY;
+      int degree = 2;
+      if(vm.count("degree") || vm_file.count("degree")) {
+	if(vm_file.count("degree")) {
+	  degree = vm_file["degree"].as<int>();
+	  if(vm.count("degree") && degree != vm["degree"].as<int>())
+	    cerr<<"You specified a different degree with --degree than the one in the regressor file. Pursuing with the loaded value of "<<degree<<endl;
+	} 
+	else {
+	  std::stringstream ss;
+	  degree = vm["degree"].as<int>();	
+	  ss<<" --degree "<<degree;
+	  all.options_from_file.append(ss.str());
+	}
+      }
+      cerr<<"degree = "<<degree<<endl;
+      params->kernel_params = calloc(1,sizeof(double*));
+      *((double*)params->kernel_params) = degree;
     }      
     else
       params->kernel_type = SVM_KER_LIN;            

@@ -16,6 +16,9 @@ license as described in the file LICENSE.
 #include "rand48.h"
 #include "vw.h"
 #include "example.h"
+#include "allreduce.h"
+#include "accumulate.h"
+#include "parser.h"
 
 using namespace std;
 
@@ -44,9 +47,11 @@ namespace NN {
     //pool maintainence
     size_t pool_size;
     size_t pool_pos;
-    size_t subsample; //NOTE: Eliminating subsample to only support 1/pool_size
+    size_t subsample; 
     example** pool;
     size_t numqueries;
+    size_t local_begin, local_end;
+    size_t current_t;
 
   
     learner base;
@@ -94,6 +99,7 @@ namespace NN {
 
   void learn_with_output(vw& all, nn& n, example* ec, bool shouldOutput)
   {
+    //cerr<<"Inpass = "<<n.inpass<<endl;
     if (! n.finished_setup)
       finish_setup (&n, all);
 
@@ -158,7 +164,6 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 
     n.output_layer.total_sum_feat_sq = 1;
     n.output_layer.sum_feat_sq[nn_output_namespace] = 1;
-
     for (unsigned int i = 0; i < n.k; ++i)
       {
         float sigmah =
@@ -200,7 +205,14 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       n.output_layer.ld = 0;
     }
 
+    // cerr<<"Weights: ";
+    // for(int i = 0;i <= all.reg.weight_mask;i++)
+    //   if(fabs(all.reg.weight_vector[i]) > 0)
+    // 	cerr<<i<<":"<<all.reg.weight_vector[i]<<" ";
+    // cerr<<endl;
+
     n.output_layer.final_prediction = GD::finalize_prediction (all, n.output_layer.partial_prediction);
+    //cerr<<"Output final = "<<n.output_layer.final_prediction<<endl;
 
     if (shouldOutput) {
       outputStringStream << ' ' << n.output_layer.partial_prediction;
@@ -220,6 +232,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
         save_max_label = all.sd->max_label;
         all.sd->max_label = hidden_max_activation;
 
+	//cerr<<"Gradhw = ";
         for (unsigned int i = 0; i < n.k; ++i) {
           update_example_indicies (all.audit, ec, n.increment);
           if (! dropped_out[i]) {
@@ -232,8 +245,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
             ld->label = GD::finalize_prediction (all, hidden_units[i] - gradhw);
             if (ld->label != hidden_units[i])
               n.base.learn(ec);
+	    
+	    //cerr<<n.increment<<":"<<sigmah<<":"<<nu<<" ";
           }
         }
+	//cerr<<endl;
         update_example_indicies (all.audit, ec, -n.k*n.increment);
 
         all.loss = save_loss;
@@ -265,7 +281,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     ec->partial_prediction = save_partial_prediction;
     ec->final_prediction = save_final_prediction;
     ec->loss = save_ec_loss;
+    //cerr<<"Final: "<<ec->final_prediction<<endl;
   }
+
+
   void learn(void* d,example* ec) {
     nn* n = (nn*)d;
     vw* all = n->all;
@@ -274,61 +293,133 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     
   }
 
-
-  void sync_queries(vw& all, nn& n, bool* train_pool) {
-    io_buf b;
-    char* queries;
-    
-    for(int i = 0;i < n.pool_pos;i++) {
-      if(!train_pool[i])
-	continue;
-      //b.init();
-      
-      cache_simple_label(n.pool[i]->ld, b);      
-      cache_features(b, n.pool[i], mask);
+  void print_example(vw* all, example* ec) {
+    if(command_example(all, ec)) return;
+    if(ec->ld) {
+      cerr<<"Label: "<<((label_data*)ec->ld)->label<<" "<<((label_data*)ec->ld)->weight<<endl;      
     }
-    
-    float* sizes = (float*)calloc(all.total,sizeof(float));
-    sizes[all.unique_id] = b.space.size();
-    allreduce(sizes, all.total, all.master_location, all.unique_id, all.total, all.node, all.socks); 
-    
-    int prev_sum = 0, total_sum = 0;
-    for(size_t i = 0;i < all.total;i++) {
-      if(i < unique_id-1)	
-	prev_sum += sizes[i];
-      total_sum += sizes[i];
-    }
-    
-    queries = (char*)calloc(total_sum, sizeof(char));
-    memcpy(queries + prev_sum, b.space.begin, b.space.size());
-    allreduce(queries, total_sum, all.master_location, all.unique_id, all.total, all.node, all.socks); 
-
-    io_buf* save_in = all.p->in;
-    //size_t read_sum = 0;
-    all.p->in = b;
-    b.space.begin = queries;
-    b.space.end = b.space.begin;
-    b.endloaded = queries.end;
-    for(size_t i = 0;i < n.pool_size, n.pool_pos++;i++) {      
-      n.pool[i] = (example*) calloc(1, sizeof(example));
-      if(read_cached_features(all, n.pool[i]))
-	train_pool[i] = true;
-      else
-	break;
-    }
+    cerr<<"Prediction: "<<ec->final_prediction<<endl;
+    cerr<<"Counter: "<<ec->example_counter<<endl;
+    cerr<<"Indices: "<<ec->indices.size()<<" ";
+    for(int i = 0;i < ec->indices.size();i++)
+      cerr<<(int)ec->indices[i]<<":"<<ec->atomics[(int)ec->indices[i]].size()<<" ";
+    cerr<<endl;
+    cerr<<"Offset = "<<ec->ft_offset<<endl;
+    cerr<<"Num features = "<<ec->num_features<<endl;
+    cerr<<"Loss = "<<ec->loss<<endl;
+    cerr<<"Eta = "<<ec->eta_round<<" "<<ec->eta_global<<endl;
+    cerr<<"Global weight = "<<ec->global_weight<<endl;
+    cerr<<"Example t = "<<ec->example_t<<endl;
+    cerr<<"Sum_sq = "<<ec->total_sum_feat_sq<<endl;
+    cerr<<"Revert weight = "<<ec->revert_weight<<endl;
+    cerr<<"Test only = "<<ec->test_only<<endl;
+    cerr<<"End pass = "<<ec->end_pass<<endl;
+    cerr<<"Sorted = "<<ec->sorted<<endl;
+    cerr<<"In use = "<<ec->in_use<<endl;
+    cerr<<"Done = "<<ec->done<<endl;
   }
 
 
-  void predict_and_learn(vw& all, nn& n,  bool shouldOutput) {
+  void sync_queries(vw& all, nn& n, bool* train_pool) {
+    io_buf* b = new io_buf();
+
+    char* queries;
+    cerr<<"Syncing"<<endl;
+    
+
+    for(int i = 0;i < n.pool_pos;i++) {
+      if(!train_pool[i])
+	continue;
+      //cerr<<n.pool[i]->example_counter<<endl;
+      cache_simple_label(n.pool[i]->ld, *b);      
+      cache_features(*b, n.pool[i], all.reg.weight_mask);
+      cerr<<"Writing\n";
+      //save_load_example(*b, false, n.pool[i]);
+      // cerr<<"***********Before**************\n";
+      // print_example(&all, n.pool[i]);
+    }
+    
+    float* sizes = (float*)calloc(all.total,sizeof(float));
+    sizes[all.node] = b->space.end - b->space.begin;
+    cerr<<"Local size = "<<sizes[all.node]<<endl;
+    all_reduce(sizes, all.total, all.span_server, all.unique_id, all.total, all.node, all.socks); 
+
+    //cerr<<"Done with first allreduce\n";
+
+    cerr<<"Sizes: ";
+    int prev_sum = 0, total_sum = 0;
+    for(int i = 0;i < all.total;i++) {
+      if(i <= (int)(all.node-1)) {	
+    	prev_sum += sizes[i];
+      }
+      total_sum += sizes[i];
+      cerr<<sizes[i]<<" ";
+    }
+    cerr<<endl;
+    cerr<<"Prev sum = "<<prev_sum<<" total_sum = "<<total_sum<<endl;
+
+    if(total_sum > 0) {
+      size_t ar_sum = total_sum + (sizeof(float) - total_sum % sizeof(float)) % sizeof(float);
+      queries = (char*)calloc(ar_sum, sizeof(char));
+      memset(queries, '\0', ar_sum);
+      memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
+      cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
+      b->space.delete_v();
+      //cerr<<"Entering second allreduce\n";
+      all_reduce(queries, ar_sum, all.span_server, all.unique_id, all.total, all.node, all.socks); 
+
+      cerr<<"Done with second allreduce\n";
+      
+      b->space.begin = queries;
+      b->space.end = b->space.begin;
+      b->endloaded = &queries[total_sum*sizeof(char)];
+
+      cerr<<"Before reading: "<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
+
+      size_t num_read = 0;
+      n.pool_pos = 0;
+      for(size_t i = 0;i < n.pool_size && num_read < total_sum; n.pool_pos++,i++) {            
+    	n.pool[i] = (example*) calloc(1, sizeof(example));
+    	n.pool[i]->ld = calloc(1, sizeof(simple_label));
+	cerr<<"i = "<<i<<" "<<num_read<<endl;
+    	if(read_cached_features(&all, *b, n.pool[i])) {
+	  //if(!save_load_example(*b, true, n.pool[i])) {
+	  cerr<<"***********After**************\n";
+    	  train_pool[i] = true;
+    	  n.pool[i]->in_use = true;	
+	  n.current_t += ((label_data*) n.pool[i]->ld)->weight;
+	  n.pool[i]->example_t = n.current_t;	  
+    	  // print_example(&all, n.pool[i]);
+    	}
+    	else
+    	  break;
+	cerr<<b->endloaded - b->space.begin<<" "<<b->space.end - b->space.begin<<" "<<b->endloaded - b->space.end<<endl;
+    	num_read = min(b->space.end - b->space.begin,b->endloaded - b->space.begin);
+    	if(num_read == prev_sum)
+    	  n.local_begin = i+1;
+    	if(num_read == prev_sum + sizes[all.node])
+    	  n.local_end = i;
+	cerr<<"num_read = "<<num_read<<endl;
+      }
+    }
+
+    cerr<<"Synced\n";
+    free(sizes);
+    delete b;
+  }
+
+
+  void predict_and_learn(vw& all, nn& n,  example** ec_arr, bool shouldOutput) {
     
     float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
-    bool* train_pool = (bool*)calloc(n.pool_pos, sizeof(bool));
+    bool* train_pool = (bool*)calloc(n.pool_size, sizeof(bool));
+    size_t* local_pos = (size_t*) calloc(n.pool_pos, sizeof(size_t));
 
     if(n.active) {
       float gradsum = 0;
       for(int idx = 0;idx < n.pool_pos;idx++) {
 	example* ec = n.pool[idx];
-	
+	train_pool[idx] = false;
 	if (! n.finished_setup)
 	  finish_setup (&n, all);
 	
@@ -380,9 +471,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 
       for(int i = 0;i < n.pool_pos && num_train < n.subsample;i++)
 	if(frand48() < queryp[i]) {
-	  train_pool[i] = 1;
+	  train_pool[i] = true;
 	  label_data* ld = (label_data*) n.pool[i]->ld;
 	  ld->weight = 1/queryp[i];
+	  local_pos[num_train] = i;
 	  n.numqueries++;
 	  num_train++;
 	}
@@ -397,17 +489,27 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     if(n.para_active) 
       sync_queries(all, n, train_pool);
 
+
     for(int i = 0;i < n.pool_pos;i++) {
       if(n.active && !train_pool[i])
 	continue;
       
       example* ec = n.pool[i];
-      learn_with_output(all, n, ec, shouldOutput);
-      if(n.para_active)
-	return_simple_example(*all, n.pool[i]);
       
+      learn_with_output(all, n, ec, shouldOutput);
+      
+      if(n.para_active) {
+	if(i >= n.local_begin && i<= n.local_end) {	  
+	  int pos = local_pos[i-n.local_begin];
+	  ec_arr[pos]->final_prediction = n.pool[i]->final_prediction;
+	  ec_arr[pos]->loss = n.pool[i]->loss;
+	}
+	dealloc_example(NULL, *(n.pool[i]));
+	free(n.pool[i]);
+      }
     }
     
+    free(local_pos);
     free(train_pool);
     free(gradients);
   }
@@ -418,41 +520,60 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     example** ec_arr = (example**)calloc(n->pool_size, sizeof(example*));
     for(int i = 0;i < n->pool_size;i++)
       ec_arr[i] = NULL;
+    int local_pos = 0;
     
     while ( true )
       {
 	for(int i = 0;i < n->pool_size;i++) {
 	  if ((ec_arr[i] = VW::get_example(all->p)) != NULL)//semiblocking operation.
 	    {
-	      n->pool[i] = ec_arr[i];
-	      n->pool_pos++;
+	      if(!command_example(all,ec_arr[i])) {
+		n->pool[i] = ec_arr[i];
+		n->pool_pos++;
+	      }
 	    }
 	  else 
 	    break;
 	}
-	
-	predict_and_learn(*all, *n, false);
-	for(int i = 0;i < n->pool_pos;i++) {
+	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
+	local_pos = n->pool_pos;
+	predict_and_learn(*all, *n, ec_arr, false);
+	for(int i = 0;i < local_pos;i++) {
+	  // float save_label = ((label_data*)ec_arr[i]->ld)->label;
+	  // ((label_data*)ec_arr[i]->ld)->label = FLT_MAX;
+	  // n->base.learn(ec_arr[i]);
+	  // ((label_data*)ec_arr[i]->ld)->label = save_label;
+	  // ec_arr[i]->loss = all->loss->getLoss(all->sd, ec_arr[i]->final_prediction, save_label);
+	  //cerr<<"While accounting: ";
+	  //cerr<<((label_data*)ec_arr[i]->ld)->label<<" "<<ec_arr[i]->loss<<" "<<ec_arr[i]->final_prediction<<endl;
 	  int save_raw_prediction = all->raw_prediction;
 	  all->raw_prediction = -1;
 	  return_simple_example(*all, ec_arr[i]);
 	  all->raw_prediction = save_raw_prediction;			  
 	}
 	n->pool_pos = 0;
-	if(parser_done(all->p))
+	if(parser_done(all->p)) {
+	  free(ec_arr);
 	   return;
+	}
       }
+
+    
   }
 
   void finish(void* d)
   {
     nn* n =(nn*)d;
+    vw* all = n->all;
     if(n->active)
       cerr<<"Number of label queries = "<<n->numqueries<<endl;
+    // if(n->para_active)
+    //   accumulate_scalar(*all, all->span_server, all->sd->sum_loss);
     n->base.finish();
     delete n->squared_loss;
     free (n->output_layer.indices.begin);
     free (n->output_layer.atomics[nn_output_namespace].begin);
+    free(n->pool);
     free(n);
   }
 
@@ -495,7 +616,9 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       if(vm.count("para_active"))
 	n->para_active = 1;
       n->numqueries = 0;
-      cerr<<"C0 = "<<all.active_c0<<endl;
+      //cerr<<"C0 = "<<all.active_c0<<endl;
+      if(n->para_active)
+	n->current_t = 0;
     }
     
     if(vm_file.count("pool_size"))
@@ -516,6 +639,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	n->subsample = ceil(n->pool_size / all.total);
       else
 	n->subsample = 1;
+    cerr<<"Subsample = "<<n->subsample<<endl;
 
     //first parse for number of hidden units
     n->k = 0;
@@ -545,6 +669,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       ss << " --dropout ";
       all.options_from_file.append(ss.str());
     }
+    else
+      n->dropout = false;
 
     if ( vm.count("meanfield") ) {
       n->dropout = false;

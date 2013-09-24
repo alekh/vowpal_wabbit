@@ -27,7 +27,7 @@ void accumulate(vw& all, string master_location, regressor& reg, size_t o) {
       local_grad[i] = weights[stride*i+o];
     }
 
-  all_reduce(local_grad, length, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(local_grad, length, master_location, all.unique_id, all.total, all.node, all.socks);
   for(uint32_t i = 0;i < length;i++) 
     {
       weights[stride*i+o] = local_grad[i];
@@ -37,7 +37,7 @@ void accumulate(vw& all, string master_location, regressor& reg, size_t o) {
 
 float accumulate_scalar(vw& all, string master_location, float local_sum) {
   float temp = local_sum;
-  all_reduce(&temp, 1, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(&temp, 1, master_location, all.unique_id, all.total, all.node, all.socks);
   return temp;
 }
 
@@ -47,13 +47,13 @@ void accumulate_avg(vw& all, string master_location, regressor& reg, size_t o) {
   float* local_grad = new float[length];
   weight* weights = reg.weight_vector;
   float numnodes = 1.;
-  all_reduce(&numnodes, 1, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(&numnodes, 1, master_location, all.unique_id, all.total, all.node, all.socks);
   for(uint32_t i = 0;i < length;i++) 
     {
       local_grad[i] = weights[stride*i+o];
     }
 
-  all_reduce(local_grad, length, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(local_grad, length, master_location, all.unique_id, all.total, all.node, all.socks);
   for(uint32_t i = 0;i < length;i++) 
     {
       weights[stride*i+o] = local_grad[i]/numnodes;
@@ -88,7 +88,7 @@ void accumulate_weighted_avg(vw& all, string master_location, regressor& reg) {
   for(uint32_t i = 0;i < length;i++) 
     local_weights[i] = sqrt(weights[stride*i+1]*weights[stride*i+1]);
   
-  all_reduce(local_weights, length, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(local_weights, length, master_location, all.unique_id, all.total, all.node, all.socks);
 
   for(uint32_t i = 0;i < length;i++) 
     if(local_weights[i] > 0) {
@@ -99,7 +99,7 @@ void accumulate_weighted_avg(vw& all, string master_location, regressor& reg) {
     else 
       weights[stride*i] = 0; 
 
-  all_reduce(weights, (int)stride*length, master_location, all.unique_id, all.total, all.node, all.socks);
+  all_reduce<float>(weights, (int)stride*length, master_location, all.unique_id, all.total, all.node, all.socks);
 
   delete[] local_weights;
 }

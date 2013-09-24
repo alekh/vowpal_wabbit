@@ -11,6 +11,7 @@ license as described in the file LICENSE.
 
 #define SVM_KER_LIN 0
 #define SVM_KER_RBF 1
+#define SVM_KER_POLY 2
 
 #include "example.h"
 #include "v_array.h"
