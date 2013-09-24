@@ -2,7 +2,7 @@ COMPILER = g++
 BINARIES = vw active_interactor
 MANPAGES = vw.1
 
-all:	
+all:
 	cd ..; $(MAKE)
 
 test:
@@ -25,17 +25,20 @@ vw_DEPS = $(patsubst %.cc,%.d,$(vw_SOURCES))
 
 -include $(vw_DEPS)
 
-%.o:	 %.cc  %.h
+%.o:	%.cc %.h
 	$(COMPILER) $(FLAGS) -c $< -o $@
 
-%.o:	 %.cc
+%.o:	%.cc
 	$(COMPILER) $(FLAGS) -c $< -o $@
+
+liballreduce.a:	allreduce.o
+	ar rcs $@ $<
 
 libvw.a: $(filter-out vw.o,$(vw_OBJECTS))
 	ar rcs $@ $+
 
-vw: main.o libvw.a 
-	$(COMPILER) $(FLAGS) -L$(BOOST_LIBRARY) -L. -o $@ $< -l vw  $(LIBS)
+vw: main.o libvw.a liballreduce.a
+	$(COMPILER) $(FLAGS) -L$(BOOST_LIBRARY) -L. -o $@ $< -l vw -l allreduce $(LIBS)
 
 active_interactor: active_interactor.cc
 	$(COMPILER) $(FLAGS) -o $@ $+
@@ -44,4 +47,5 @@ install: $(BINARIES)
 	cp $(BINARIES) /usr/local/bin; cd cluster; $(MAKE) install
 
 clean:
-	rm -f  *.o *.d $(BINARIES) *~ $(MANPAGES) libvw.a
+	rm -f *.o *.d $(BINARIES) *~ $(MANPAGES) libvw.a
+
