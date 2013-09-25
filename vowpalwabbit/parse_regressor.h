@@ -8,7 +8,7 @@ license as described in the file LICENSE.
 
 #include <string>
 #include "loss_functions.h"
-#include "boost/program_options.hpp"
+#include <boost/program_options.hpp>
 #include "global_data.h"
 
 namespace po = boost::program_options;
