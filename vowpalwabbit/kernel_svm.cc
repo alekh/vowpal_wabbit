@@ -582,12 +582,13 @@ namespace KSVM
       //free(scores);
     }
 
-    for(int i = 0;i < params->pool_pos;i++)
-      if(!train_pool[i])
-	delete params->pool[i];
-
-    if(params->para_active)
+    
+    if(params->para_active) {
+      for(int i = 0;i < params->pool_pos;i++)
+	if(!train_pool[i])
+	  delete params->pool[i];
       sync_queries(*(params->all), *params, train_pool);
+    }
 
     if(params->all->training) {
       
