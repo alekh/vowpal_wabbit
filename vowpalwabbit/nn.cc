@@ -423,7 +423,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
     bool* train_pool = (bool*)calloc(n.pool_size, sizeof(bool));
     size_t* local_pos = (size_t*) calloc(n.pool_pos, sizeof(size_t));
-
+    cerr<<"Predicting\n";
     if(n.active) {
       float gradsum = 0;
       for(int idx = 0;idx < n.pool_pos;idx++) {
@@ -488,12 +488,14 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  num_train++;
 	}
 
-      // for(int i = 0; i < n.pool_pos;i++) 
-      // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
-      // cerr<<endl;
+      for(int i = 0; i < n.pool_pos;i++) 
+	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
+      cerr<<endl;
 
       free(queryp);
     }
+    
+    cerr<<"Calling sync\n";
 
     if(n.para_active) 
       sync_queries(all, n, train_pool);
@@ -544,8 +546,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  else 
 	    break;
 	}
-	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
+	cerr<<"pool_pos = "<<n->pool_pos<<endl;
 	local_pos = n->pool_pos;
+	cerr<<"Calling predict and learn\n";
+	fflush(stderr);
 	predict_and_learn(*all, *n, ec_arr, false);
 	for(int i = 0;i < local_pos;i++) {
 	  // float save_label = ((label_data*)ec_arr[i]->ld)->label;
