@@ -347,9 +347,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     float* sizes = (float*)calloc(n.total,sizeof(float));
     sizes[n.node] = b->space.end - b->space.begin;
     cerr<<"Local size = "<<sizes[all.node]<<endl;
+    fflush(stderr);
     all_reduce(sizes, n.total, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
     cerr<<"Done with first allreduce\n";
+    fflush(stderr);
 
     //cerr<<"Sizes: ";
     int prev_sum = 0, total_sum = 0;
@@ -371,9 +373,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       //cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
       b->space.delete_v();
       cerr<<"Entering second allreduce\n";
+      fflush(stderr);
       all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
       cerr<<"Done with second allreduce\n";
+      fflush(stderr);
       
       b->space.begin = queries;
       b->space.end = b->space.begin;
