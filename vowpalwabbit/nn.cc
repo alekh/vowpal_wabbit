@@ -329,7 +329,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     io_buf* b = new io_buf();
 
     char* queries;
-    //cerr<<"Syncing"<<endl;
+    cerr<<"Syncing"<<endl;
     
 
     for(int i = 0;i < n.pool_pos;i++) {
@@ -346,10 +346,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     
     float* sizes = (float*)calloc(n.total,sizeof(float));
     sizes[n.node] = b->space.end - b->space.begin;
-    //cerr<<"Local size = "<<sizes[all.node]<<endl;
+    cerr<<"Local size = "<<sizes[all.node]<<endl;
     all_reduce(sizes, n.total, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
-    //cerr<<"Done with first allreduce\n";
+    cerr<<"Done with first allreduce\n";
 
     //cerr<<"Sizes: ";
     int prev_sum = 0, total_sum = 0;
@@ -370,10 +370,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
       //cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
       b->space.delete_v();
-      //cerr<<"Entering second allreduce\n";
+      cerr<<"Entering second allreduce\n";
       all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
-      //cerr<<"Done with second allreduce\n";
+      cerr<<"Done with second allreduce\n";
       
       b->space.begin = queries;
       b->space.end = b->space.begin;
