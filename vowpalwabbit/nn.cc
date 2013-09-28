@@ -418,11 +418,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	  n.local_end = i;
 	//cerr<<"num_read = "<<num_read<<endl;
       }
-      int done = (int)parser_done(all.p);
-      if(done) n->local_done = true;
-      all_reduce(done, 1, *n.span_server, n.unique_id, n.total, n.node, *(n.socks)); 
-      if(done == n.total)
-	n.all_done = true;
+      
     }
 
     //cerr<<"Synced\n";
@@ -593,8 +589,21 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  return_simple_example(*all, ec_arr[i]);
 	  all->raw_prediction = save_raw_prediction;			  
 	}
-	n->pool_pos = 0;
-	if((!n->para_active && parser_done(all->p)) || (n->para_active && n->all_done)) {
+	
+	int done = (int)parser_done(all->p);
+	if(done) n->local_done = true;
+	if(n->para_active) {
+	  all_reduce(&done, 1, *n->span_server, n->unique_id, n->total, n->node, *(n->socks)); 
+	  if(n->local_done)
+	    cerr<<"All done = "<<done<<endl;
+	  if(done > 0) {
+	    cerr<<n->pool_pos<<endl;
+	  }
+	  if(done == n->total)
+	    n->all_done = true;
+	}
+
+	if((!n->para_active && n->local_done) || (n->para_active && n->all_done)) {
 	  free(ec_arr);
 	  cerr<<"Parser done \n";
 	   if(n->para_active) {
@@ -604,9 +613,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	     all_reduce(&all->sd->weighted_examples, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     all_reduce(&all->sd->sum_loss, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     cerr<<"Loss "<<all->sd->sum_loss<<" "<<all->sd->weighted_examples<<endl;
-    }
+	   }
 	   return;
 	}
+	n->pool_pos = 0;
       }
 
     
