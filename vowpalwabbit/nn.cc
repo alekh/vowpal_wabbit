@@ -58,6 +58,8 @@ namespace NN {
     size_t total; //total number of nodes
     size_t node; //node id number
     node_socks* socks;
+    bool all_done;
+    bool local_done;
   
     learner base;
     vw* all;
@@ -329,7 +331,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     io_buf* b = new io_buf();
 
     char* queries;
-    cerr<<"Syncing"<<endl;
+    //cerr<<"Syncing"<<endl;
     
 
     for(int i = 0;i < n.pool_pos;i++) {
@@ -346,12 +348,18 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     
     float* sizes = (float*)calloc(n.total,sizeof(float));
     sizes[n.node] = b->space.end - b->space.begin;
-    cerr<<"Local size = "<<sizes[all.node]<<endl;
-    fflush(stderr);
-    all_reduce(sizes, n.total, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
+    //cerr<<"Local size = "<<sizes[all.node]<<endl;
+    //fflush(stderr);
+    all_reduce(sizes, n.total, *(n.span_server), n.unique_id, n.total, n.node, *(n.socks)); 
+    
+    //cerr<<n.socks->current_master<<" "<<n.socks->parent<<" "<<n.socks->children[0]<<" "<<n.socks->children[1]<<endl;
 
-    cerr<<"Done with first allreduce\n";
-    fflush(stderr);
+    int one = 1;
+    all_reduce(&one, 1, *n.span_server, n.unique_id, n.total, n.node, *n.socks);
+    //cerr<<"After AR "<<one<<endl;
+
+    //cerr<<"Done with first allreduce\n";
+    //fflush(stderr);
 
     //cerr<<"Sizes: ";
     int prev_sum = 0, total_sum = 0;
@@ -372,12 +380,12 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
       //cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
       b->space.delete_v();
-      cerr<<"Entering second allreduce\n";
-      fflush(stderr);
-      all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
+      //cerr<<"Entering second allreduce\n";
+      //fflush(stderr);
+      all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *(n.socks)); 
 
-      cerr<<"Done with second allreduce\n";
-      fflush(stderr);
+      //cerr<<"Done with second allreduce\n";
+      //fflush(stderr);
       
       b->space.begin = queries;
       b->space.end = b->space.begin;
@@ -410,6 +418,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	  n.local_end = i;
 	//cerr<<"num_read = "<<num_read<<endl;
       }
+      int done = (int)parser_done(all.p);
+      if(done) n->local_done = true;
+      all_reduce(done, 1, *n.span_server, n.unique_id, n.total, n.node, *(n.socks)); 
+      if(done == n.total)
+	n.all_done = true;
     }
 
     //cerr<<"Synced\n";
@@ -423,7 +436,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
     bool* train_pool = (bool*)calloc(n.pool_size, sizeof(bool));
     size_t* local_pos = (size_t*) calloc(n.pool_pos, sizeof(size_t));
-    cerr<<"Predicting\n";
+    //cerr<<"Predicting\n";
     if(n.active) {
       float gradsum = 0;
       for(int idx = 0;idx < n.pool_pos;idx++) {
@@ -488,14 +501,14 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  num_train++;
 	}
 
-      for(int i = 0; i < n.pool_pos;i++) 
-	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
-      cerr<<endl;
+      // for(int i = 0; i < n.pool_pos;i++) 
+      // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
+      // cerr<<endl;
 
       free(queryp);
     }
     
-    cerr<<"Calling sync\n";
+    //cerr<<"Calling sync\n";
 
     if(n.para_active) 
       sync_queries(all, n, train_pool);
@@ -527,28 +540,44 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 
   void drive_nn(vw *all, void* d)
   {
+    //cerr<<"In driver\n";
+    fflush(stderr);
     nn* n = (nn*)d;
     example** ec_arr = (example**)calloc(n->pool_size, sizeof(example*));
     for(int i = 0;i < n->pool_size;i++)
       ec_arr[i] = NULL;
     int local_pos = 0;
     
+    // int one = 1;
+    // all_reduce(&one, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
+    // cerr<<"After first AR "<<one<<endl;
+
     while ( true )
       {
 	for(int i = 0;i < n->pool_size;i++) {
+	  if(n->local_done) break;
+	  //cerr<<i<<" "<<n->pool_size<<" "<<n->pool_pos<<endl;
+	  //fflush(stderr);
 	  if ((ec_arr[i] = VW::get_example(all->p)) != NULL)//semiblocking operation.
 	    {
+	      //cerr<<"Read new example\n";
+	      fflush(stderr);
 	      if(!command_example(all,ec_arr[i])) {
+		//cerr<<"Putting in the pool\n";
 		n->pool[i] = ec_arr[i];
 		n->pool_pos++;
 	      }
+	      //else
+		//cerr<<"Found command example!!!\n";
 	    }
-	  else 
+	  else {
+	    //cerr<<"Parser says NULL\n";
 	    break;
+	  }
 	}
-	cerr<<"pool_pos = "<<n->pool_pos<<endl;
+	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
 	local_pos = n->pool_pos;
-	cerr<<"Calling predict and learn\n";
+	//cerr<<"Calling predict and learn\n";
 	fflush(stderr);
 	predict_and_learn(*all, *n, ec_arr, false);
 	for(int i = 0;i < local_pos;i++) {
@@ -565,9 +594,12 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  all->raw_prediction = save_raw_prediction;			  
 	}
 	n->pool_pos = 0;
-	if(parser_done(all->p)) {
+	if((!n->para_active && parser_done(all->p)) || (n->para_active && n->all_done)) {
 	  free(ec_arr);
+	  cerr<<"Parser done \n";
 	   if(n->para_active) {
+	     cerr<<"Aggregating things at the end\n";
+	     cerr<<n->socks->parent<<" "<<n->socks->children[0]<<" "<<n->socks->children[1]<<endl;
 	     all_reduce(&all->sd->example_number, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     all_reduce(&all->sd->weighted_examples, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     all_reduce(&all->sd->sum_loss, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
@@ -656,6 +688,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       //}
       all.span_server = "";
       all.total = 0;      
+      n->all_done = false;
+      n->local_done = false;
       //delete &all.socks;
     }
     cerr<<"Copied fields from all\n";

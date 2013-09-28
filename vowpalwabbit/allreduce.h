@@ -177,8 +177,10 @@ void broadcast(char* buffer, const int n, const socket_t parent_sock, const sock
 
 template <class T> void all_reduce(T* buffer, const int n, const std::string master_location, const size_t unique_id, const size_t total, const size_t node, node_socks& socks) 
 {
+  //cerr<<"Allreduce\n";
   if(master_location != socks.current_master) 
     all_reduce_init(master_location, unique_id, total, node, socks);
+  //cerr<<"In AR "<<socks.current_master<<" "<<socks.parent<<" "<<socks.children[0]<<" "<<socks.children[1]<<endl;
   reduce<T>((char*)buffer, n*sizeof(T), socks.parent, socks.children);
   broadcast((char*)buffer, n*sizeof(T), socks.parent, socks.children);
 }
