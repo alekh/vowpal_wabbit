@@ -588,11 +588,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	if(done) n->local_done = true;
 	if(n->para_active) {
 	  all_reduce(&done, 1, *n->span_server, n->unique_id, n->total, n->node, *(n->socks)); 
-	  if(n->local_done)
-	    cerr<<"All done = "<<done<<endl;
-	  if(done > 0) {
-	    cerr<<n->pool_pos<<endl;
-	  }
+	  // if(n->local_done)
+	  //   cerr<<"All done = "<<done<<endl;
+	  // if(done > 0) {
+	  //   cerr<<n->pool_pos<<endl;
+	  // }
 	  if(done == n->total)
 	    n->all_done = true;
 	}
@@ -606,6 +606,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	     all_reduce(&all->sd->example_number, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     all_reduce(&all->sd->weighted_examples, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     all_reduce(&all->sd->sum_loss, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
+	     all_reduce(&n->numqueries, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
 	     cerr<<"Loss "<<all->sd->sum_loss<<" "<<all->sd->weighted_examples<<endl;
 	   }
 	   return;
