@@ -554,8 +554,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	      fflush(stderr);
 	      if(!command_example(all,ec_arr[i])) {
 		//cerr<<"Putting in the pool\n";
-		n->pool[i] = ec_arr[i];
-		n->pool_pos++;
+		n->pool[n->pool_pos++] = ec_arr[i];		
+		//cerr<<ec_arr[i]->in_use<<" "<<n->pool[i]->in_use<<" "<<command_example(all,ec_arr[i])<<" "<<n->pool_pos<<" "<<ec_arr[i]->example_counter<<endl;
 	      }
 	      //else
 		//cerr<<"Found command example!!!\n";
@@ -568,7 +568,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
 	local_pos = n->pool_pos;
 	//cerr<<"Calling predict and learn\n";
-	fflush(stderr);
+	
 	predict_and_learn(*all, *n, ec_arr, false);
 	for(int i = 0;i < local_pos;i++) {
 	  // float save_label = ((label_data*)ec_arr[i]->ld)->label;
@@ -585,6 +585,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	}
 	
 	int done = (int)parser_done(all->p);
+	//cerr<<"Done = "<<done<<endl;
 	if(done) n->local_done = true;
 	if(n->para_active) {
 	  all_reduce(&done, 1, *n->span_server, n->unique_id, n->total, n->node, *(n->socks)); 
