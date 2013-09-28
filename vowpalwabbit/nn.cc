@@ -499,7 +499,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     }
     
     //cerr<<"Calling sync\n";
-
+    
     if(n.para_active) 
       sync_queries(all, n, train_pool);
 
@@ -537,6 +537,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     for(int i = 0;i < n->pool_size;i++)
       ec_arr[i] = NULL;
     int local_pos = 0;
+    bool command = false;
     
     // int one = 1;
     // all_reduce(&one, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
@@ -550,6 +551,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  //fflush(stderr);
 	  if ((ec_arr[i] = VW::get_example(all->p)) != NULL)//semiblocking operation.
 	    {
+	      local_pos++;
 	      //cerr<<"Read new example\n";
 	      fflush(stderr);
 	      if(!command_example(all,ec_arr[i])) {
@@ -557,19 +559,24 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 		n->pool[n->pool_pos++] = ec_arr[i];		
 		//cerr<<ec_arr[i]->in_use<<" "<<n->pool[i]->in_use<<" "<<command_example(all,ec_arr[i])<<" "<<n->pool_pos<<" "<<ec_arr[i]->example_counter<<endl;
 	      }
-	      //else
-		//cerr<<"Found command example!!!\n";
+	      else {
+		cerr<<"Found command example!!!\n";
+		command = true;
+	      }
 	    }
 	  else {
 	    //cerr<<"Parser says NULL\n";
 	    break;
 	  }
 	}
-	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
-	local_pos = n->pool_pos;
-	//cerr<<"Calling predict and learn\n";
+	// if(command) 
+	//   cerr<<"pool_pos = "<<n->pool_pos<<endl;
+	// //local_pos = n->pool_pos;
+	// cerr<<"Calling predict and learn, local_pos = "<<local_pos<<endl;
 	
 	predict_and_learn(*all, *n, ec_arr, false);
+	// if(command) 
+	//   cerr<<"After predict and learn, pool_pos = "<<n->pool_pos<<endl;
 	for(int i = 0;i < local_pos;i++) {
 	  // float save_label = ((label_data*)ec_arr[i]->ld)->label;
 	  // ((label_data*)ec_arr[i]->ld)->label = FLT_MAX;
@@ -589,11 +596,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	if(done) n->local_done = true;
 	if(n->para_active) {
 	  all_reduce(&done, 1, *n->span_server, n->unique_id, n->total, n->node, *(n->socks)); 
-	  // if(n->local_done)
+	  // if(command)
 	  //   cerr<<"All done = "<<done<<endl;
-	  // if(done > 0) {
-	  //   cerr<<n->pool_pos<<endl;
-	  // }
+	  if(done > 0) {
+	    cerr<<n->pool_pos<<" "<<done<<endl;
+	  }
 	  if(done == n->total)
 	    n->all_done = true;
 	}
@@ -613,6 +620,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	   return;
 	}
 	n->pool_pos = 0;
+	local_pos = 0;
       }
 
     
