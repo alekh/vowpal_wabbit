@@ -1,5 +1,5 @@
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libvw", "libvw.vcxproj", "{EA52DE0D-A5BE-4FB9-8C84-3A57BDFEBED9}"
 	ProjectSection(ProjectDependencies) = postProject
 		{1E205806-7F80-47DD-A38D-FC08083F3592} = {1E205806-7F80-47DD-A38D-FC08083F3592}
@@ -125,8 +125,8 @@ Global
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Debug|x86.ActiveCfg = Debug|Win32
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Debug|x86.Build.0 = Debug|Win32
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Any CPU.ActiveCfg = Release|Win32
-		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Mixed Platforms.ActiveCfg = Release|Win32
-		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Mixed Platforms.Build.0 = Release|Win32
+		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Mixed Platforms.ActiveCfg = Release|x64
+		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Mixed Platforms.Build.0 = Release|x64
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Win32.ActiveCfg = Release|Win32
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|Win32.Build.0 = Release|Win32
 		{2720BCD9-6731-4A11-BA24-1F74E35BA97F}.Release|x64.ActiveCfg = Release|x64

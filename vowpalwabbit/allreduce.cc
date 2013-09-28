@@ -91,11 +91,14 @@ static socket_t getsock()
 
 void all_reduce_init(const string master_location, const size_t unique_id, const size_t total, const size_t node, node_socks& socks)
 {
+cerr<<"Init\n";
 #ifdef _WIN32
   WSAData wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
   int lastError = WSAGetLastError();
 #endif
+
+  
 
   struct hostent* master = gethostbyname(master_location.c_str());
 
@@ -187,8 +190,10 @@ void all_reduce_init(const string master_location, const size_t unique_id, const
   shutdown(master_sock, SHUT_RDWR);
 
   //int parent_sock;
-  if(parent_ip != (uint32_t)-1) 
+  if(parent_ip != (uint32_t)-1) {
+    cerr<<"Connecting to parent\n";
     socks.parent = sock_connect(parent_ip, parent_port);
+  }
   else
     socks.parent = -1;
 
@@ -197,17 +202,24 @@ void all_reduce_init(const string master_location, const size_t unique_id, const
   {
     sockaddr_in child_address;
     socklen_t size = sizeof(child_address);
-    socket_t f = accept(sock,(sockaddr*)&child_address,&size);
+    socket_t f = accept(sock,(sockaddr*)&child_address,&size);    
     if (f < 0)
     {
       cerr << "bad client socket!" << endl;
       throw exception();
     }
+    char hostname[NI_MAXHOST];
+    char servInfo[NI_MAXSERV];
+    getnameinfo((sockaddr *) &child_address, sizeof(sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
+    cerr << "connected to " << hostname << ':' << ntohs(port) << endl;
     socks.children[i] = f;
   }
 
+  cerr<<"In init "<<socks.parent<<" "<<socks.children[0]<<" "<<socks.children[1]<<endl;
+
   if (kid_count > 0)
     shutdown(sock, SHUT_RDWR);
+  cerr<<"In init "<<socks.parent<<" "<<socks.children[0]<<" "<<socks.children[1]<<endl;
 }
 
 

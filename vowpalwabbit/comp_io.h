@@ -8,7 +8,7 @@ license as described in the file LICENSE.
 
 #include "io_buf.h"
 #include "v_array.h"
-#include "zlib.h"
+#include <zlib.h>
 #include <stdio.h>
 
 class comp_io_buf : public io_buf
