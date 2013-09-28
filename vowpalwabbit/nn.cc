@@ -467,10 +467,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 
       float residual = n.subsample - querysum;
       
-      for(;iter != scoremap.end() && residual > 0;iter++) {
-	if(queryp[iter->second] + residual <= 1) {
-	  queryp[iter->second] += residual;
-	  residual = 0;
+      for(int pos = 0;iter != scoremap.end() && residual > 0;iter++, pos++) {
+	if(queryp[iter->second] + residual/(n.pool_pos - pos) <= 1) {
+	  queryp[iter->second] += residual/(n.pool_pos - pos);
+	  residual -= residual/(n.pool_pos - pos);
 	}
 	else {
 	  residual -= (1 - queryp[iter->second]);
@@ -496,12 +496,16 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       // cerr<<endl;
 
       free(queryp);
+      cerr<<"Locally selecting "<<num_train<<endl;
     }
     
     //cerr<<"Calling sync\n";
     
+    
     if(n.para_active) 
       sync_queries(all, n, train_pool);
+
+    cerr<<"Globally collected "<<n.pool_pos<<endl;
 
 
     for(int i = 0;i < n.pool_pos;i++) {
