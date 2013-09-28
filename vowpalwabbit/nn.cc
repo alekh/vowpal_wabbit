@@ -329,7 +329,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     io_buf* b = new io_buf();
 
     char* queries;
-    cerr<<"Syncing"<<endl;
+    //cerr<<"Syncing"<<endl;
     
 
     for(int i = 0;i < n.pool_pos;i++) {
@@ -346,11 +346,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     
     float* sizes = (float*)calloc(n.total,sizeof(float));
     sizes[n.node] = b->space.end - b->space.begin;
-    cerr<<"Local size = "<<sizes[all.node]<<endl;
+    //cerr<<"Local size = "<<sizes[all.node]<<endl;
     fflush(stderr);
     all_reduce(sizes, n.total, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
-    cerr<<"Done with first allreduce\n";
+    //cerr<<"Done with first allreduce\n";
     fflush(stderr);
 
     //cerr<<"Sizes: ";
@@ -372,11 +372,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       memcpy(queries + prev_sum, b->space.begin, b->space.end - b->space.begin);
       //cerr<<"Copied "<<(b->space.end - b->space.begin)<<endl;
       b->space.delete_v();
-      cerr<<"Entering second allreduce\n";
+      //cerr<<"Entering second allreduce\n";
       fflush(stderr);
       all_reduce(queries, ar_sum, *n.span_server, n.unique_id, n.total, n.node, *n.socks); 
 
-      cerr<<"Done with second allreduce\n";
+      //cerr<<"Done with second allreduce\n";
       fflush(stderr);
       
       b->space.begin = queries;
@@ -423,7 +423,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
     bool* train_pool = (bool*)calloc(n.pool_size, sizeof(bool));
     size_t* local_pos = (size_t*) calloc(n.pool_pos, sizeof(size_t));
-    cerr<<"Predicting\n";
+    //cerr<<"Predicting\n";
     if(n.active) {
       float gradsum = 0;
       for(int idx = 0;idx < n.pool_pos;idx++) {
@@ -488,14 +488,14 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  num_train++;
 	}
 
-      for(int i = 0; i < n.pool_pos;i++) 
-	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
-      cerr<<endl;
+      // for(int i = 0; i < n.pool_pos;i++) 
+      // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
+      // cerr<<endl;
 
       free(queryp);
     }
     
-    cerr<<"Calling sync\n";
+    //cerr<<"Calling sync\n";
 
     if(n.para_active) 
       sync_queries(all, n, train_pool);
@@ -546,9 +546,9 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  else 
 	    break;
 	}
-	cerr<<"pool_pos = "<<n->pool_pos<<endl;
+	//cerr<<"pool_pos = "<<n->pool_pos<<endl;
 	local_pos = n->pool_pos;
-	cerr<<"Calling predict and learn\n";
+	//cerr<<"Calling predict and learn\n";
 	fflush(stderr);
 	predict_and_learn(*all, *n, ec_arr, false);
 	for(int i = 0;i < local_pos;i++) {
