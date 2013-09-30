@@ -390,6 +390,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       size_t num_read = 0;
       n.pool_pos = 0;
       float label_avg = 0, weight_sum = 0;
+      float min_weight = FLT_MAX, max_weight = -1;
+      int min_pos = -1, max_pos = -1;
       for(size_t i = 0;num_read < total_sum; n.pool_pos++,i++) {            
     	n.pool[i] = (example*) calloc(1, sizeof(example));
     	n.pool[i]->ld = calloc(1, sizeof(simple_label));
@@ -399,10 +401,19 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  //cerr<<"***********After**************\n";
     	  train_pool[i] = true;
     	  n.pool[i]->in_use = true;	
-	  n.current_t += ((label_data*) n.pool[i]->ld)->weight;
+	  float weight = ((label_data*) n.pool[i]->ld)->weight;
+	  n.current_t += weight;
 	  n.pool[i]->example_t = n.current_t;	  
-	  label_avg += ((label_data*) n.pool[i]->ld)->weight * ((label_data*) n.pool[i]->ld)->label;
-	  weight_sum += ((label_data*) n.pool[i]->ld)->weight;
+	  label_avg += weight * ((label_data*) n.pool[i]->ld)->label;
+	  weight_sum += weight;
+	  if(weight > max_weight) {
+	    max_weight = weight;
+	    max_pos = i;
+	  }
+	  if(weight < min_weight) {
+	    min_weight = weight;
+	    min_pos = i;
+	  }
     	  // print_example(&all, n.pool[i]);
     	}
     	else
@@ -416,7 +427,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	  n.local_end = i;
 	//cerr<<"num_read = "<<num_read<<endl;
       }
-      cerr<<"Sum of labels = "<<label_avg<<" weight_sum = "<<weight_sum<<" average = "<<label_avg/weight_sum<<endl;
+      cerr<<"Sum of labels = "<<label_avg<<" average weight= "<<weight_sum/n.pool_pos<<" average = "<<label_avg/weight_sum<<" "<<min_weight<<" "<<min_pos<<" "<<max_weight<<" "<<max_pos<<endl;
       
     }
 
@@ -473,6 +484,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       float residual = n.subsample - querysum;
       
       for(int pos = 0;iter != scoremap.end() && residual > 0;iter++, pos++) {
+	if(pos == n.pool_pos)
+	  cerr<<"Problem: n.pool_pos == pos\n";
 	if(queryp[iter->second] + residual/(n.pool_pos - pos) <= 1) {
 	  queryp[iter->second] += residual/(n.pool_pos - pos);
 	  residual -= residual/(n.pool_pos - pos);
@@ -487,11 +500,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       int num_train = 0;
       float label_avg = 0, weight_sum = 0;
 
-      for(int i = 0;i < n.pool_pos && num_train < n.subsample+1;i++)
+      for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
 	if(frand48() < queryp[i]) {
 	  train_pool[i] = true;
 	  label_data* ld = (label_data*) n.pool[i]->ld;
-	  ld->weight = 1/queryp[i];
+	  ld->weight = 1/queryp[i]/n.pool_size;
 	  local_pos[num_train] = i;
 	  n.numqueries++;
 	  num_train++;
@@ -516,7 +529,6 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       sync_queries(all, n, train_pool);
 
     //cerr<<"Globally collected "<<n.pool_pos<<endl;
-
 
     for(int i = 0;i < n.pool_pos;i++) {
       if(n.active && !train_pool[i])
@@ -684,6 +696,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       options(desc).allow_unregistered().run();
     po::store(parsed_file, vm_file);
     po::notify(vm_file);
+    cerr<<"Node = "<<(uint64_t) all.node<<endl;
+    msrand48((uint64_t)all.node);
 
     n->training = all.training;
     n->active = all.active_simulation;        
