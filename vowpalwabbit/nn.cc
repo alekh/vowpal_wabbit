@@ -485,6 +485,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       }
 
       int num_train = 0;
+      float label_avg = 0, weight_sum = 0;
 
       for(int i = 0;i < n.pool_pos && num_train < n.subsample+1;i++)
 	if(frand48() < queryp[i]) {
@@ -494,7 +495,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  local_pos[num_train] = i;
 	  n.numqueries++;
 	  num_train++;
+	  label_avg += ((label_data*) n.pool[i]->ld)->weight * ((label_data*) n.pool[i]->ld)->label;
+	  weight_sum += ((label_data*) n.pool[i]->ld)->weight;
 	}
+
+      cerr<<"Sum of labels = "<<label_avg<<" weight_sum = "<<weight_sum<<" average = "<<label_avg/weight_sum<<endl;
 
       // for(int i = 0; i < n.pool_pos;i++) 
       // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
@@ -510,7 +515,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     if(n.para_active) 
       sync_queries(all, n, train_pool);
 
-    cerr<<"Globally collected "<<n.pool_pos<<endl;
+    //cerr<<"Globally collected "<<n.pool_pos<<endl;
 
 
     for(int i = 0;i < n.pool_pos;i++) {
