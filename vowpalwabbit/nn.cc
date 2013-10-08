@@ -427,7 +427,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	  n.local_end = i;
 	//cerr<<"num_read = "<<num_read<<endl;
       }
-      cerr<<"Sum of labels = "<<label_avg<<" average weight= "<<weight_sum/n.pool_pos<<" average = "<<label_avg/weight_sum<<" "<<min_weight<<" "<<min_pos<<" "<<max_weight<<" "<<max_pos<<endl;
+      //cerr<<"Sum of labels = "<<label_avg<<" average weight= "<<weight_sum/n.pool_pos<<" average = "<<label_avg/weight_sum<<" "<<min_weight<<" "<<min_pos<<" "<<max_weight<<" "<<max_pos<<endl;
       
     }
 
@@ -476,7 +476,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       float querysum = 0;
       
       for(int i = 0;i < n.pool_pos;i++) {
-	queryp[i] = min<float>(gradients[i]/gradsum * (float)n.subsample, 1.0);
+	queryp[i] = min<float>(gradients[i]/gradsum*n.subsample, 1.0);
 	//cerr<<queryp[i]<<":"<<gradients[i]/gradsum * (float)n.subsample<<" ";
 	querysum += queryp[i];
       }
@@ -500,7 +500,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       int num_train = 0;
       float label_avg = 0, weight_sum = 0;
 
-      for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
+      //for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
+      for(int i = 0;i < n.pool_pos;i++)
 	if(frand48() < queryp[i]) {
 	  train_pool[i] = true;
 	  label_data* ld = (label_data*) n.pool[i]->ld;
@@ -511,15 +512,16 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	  label_avg += ((label_data*) n.pool[i]->ld)->weight * ((label_data*) n.pool[i]->ld)->label;
 	  weight_sum += ((label_data*) n.pool[i]->ld)->weight;
 	}
-
-      cerr<<"Sum of labels = "<<label_avg<<" weight_sum = "<<weight_sum<<" average = "<<label_avg/weight_sum<<endl;
+      
+      //if(weight_sum > 0)
+	//cerr<<"Sum of labels = "<<label_avg<<" weight_sum = "<<weight_sum<<" average = "<<label_avg/weight_sum<<endl;
 
       // for(int i = 0; i < n.pool_pos;i++) 
       // 	cerr<<"gradient: "<<gradients[i]<<" queryp: "<<queryp[i]<<" ";
       // cerr<<endl;
 
       free(queryp);
-      cerr<<"Locally selecting "<<num_train<<" "<<scoremap.begin()->first<<" "<<gradsum<<endl;
+      //cerr<<"Locally selecting "<<num_train<<" "<<scoremap.begin()->first<<" "<<gradsum<<endl;
     }
     
     //cerr<<"Calling sync\n";
@@ -700,6 +702,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     msrand48((uint64_t)all.node);
 
     n->training = all.training;
+    cerr<<"training = "<<n->training<<endl;
     n->active = all.active_simulation;        
     if(n->active) {
       if(vm.count("pool_greedy"))

@@ -726,22 +726,24 @@ void save_load_regressor(vw& all, io_buf& model_file, bool read, bool text)
 void save_load_online_state(vw& all, io_buf& model_file, bool read, bool text)
 {
   char buff[512];
+  uint32_t text_len;
   
-  uint32_t text_len = sprintf(buff, "initial_t %f\n", all.initial_t);
+  text_len = sprintf(buff, "initial_t %f\n", all.initial_t);
   bin_text_read_write_fixed(model_file,(char*)&all.initial_t, sizeof(all.initial_t), 
 			    "", read, 
-			    buff, text_len, text);
+			    buff, text_len, text);\
+    
 
   text_len = sprintf(buff, "norm normalizer %f\n", all.normalized_sum_norm_x);
   bin_text_read_write_fixed(model_file,(char*)&all.normalized_sum_norm_x, sizeof(all.normalized_sum_norm_x), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "t %f\n", all.sd->t);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->t, sizeof(all.sd->t), 
 			    "", read, 
 			    buff, text_len, text);
-
+  
   text_len = sprintf(buff, "sum_loss %f\n", all.sd->sum_loss);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->sum_loss, sizeof(all.sd->sum_loss), 
 			    "", read, 
@@ -751,11 +753,12 @@ void save_load_online_state(vw& all, io_buf& model_file, bool read, bool text)
   bin_text_read_write_fixed(model_file,(char*)&all.sd->sum_loss_since_last_dump, sizeof(all.sd->sum_loss_since_last_dump), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "dump_interval %f\n", all.sd->dump_interval);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->dump_interval, sizeof(all.sd->dump_interval), 
 			    "", read, 
 			    buff, text_len, text);
+    
 
   text_len = sprintf(buff, "min_label %f\n", all.sd->min_label);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->min_label, sizeof(all.sd->min_label), 
@@ -766,31 +769,41 @@ void save_load_online_state(vw& all, io_buf& model_file, bool read, bool text)
   bin_text_read_write_fixed(model_file,(char*)&all.sd->max_label, sizeof(all.sd->max_label), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "weighted_examples %f\n", all.sd->weighted_examples);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->weighted_examples, sizeof(all.sd->weighted_examples), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "weighted_labels %f\n", all.sd->weighted_labels);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->weighted_labels, sizeof(all.sd->weighted_labels), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "weighted_unlabeled_examples %f\n", all.sd->weighted_unlabeled_examples);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->weighted_unlabeled_examples, sizeof(all.sd->weighted_unlabeled_examples), 
 			    "", read, 
 			    buff, text_len, text);
-  
+    
   text_len = sprintf(buff, "example_number %u\n", (uint32_t)all.sd->example_number);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->example_number, sizeof(all.sd->example_number), 
 			    "", read, 
 			    buff, text_len, text);
-
+    
   text_len = sprintf(buff, "total_features %u\n", (uint32_t)all.sd->total_features);
   bin_text_read_write_fixed(model_file,(char*)&all.sd->total_features, sizeof(all.sd->total_features), 
 			    "", read, 
 			    buff, text_len, text);
+
+  if(!all.training) {
+    all.sd->example_number = 0;
+    all.sd->sum_loss = 0;
+    all.sd->weighted_examples = 0;
+    all.sd->weighted_labels = 0;
+    all.sd->dump_interval = 1;
+    all.sd->sum_loss_since_last_dump = 0;
+    all.sd->total_features = 0;
+  }
 
   uint32_t length = 1 << all.num_bits;
   uint32_t stride = all.reg.stride;
