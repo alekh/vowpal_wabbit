@@ -53,7 +53,7 @@ namespace NN {
     example** pool;
     size_t numqueries;
     size_t local_begin, local_end;
-    size_t current_t;
+    float current_t;
     int save_interval;
 
     std::string* span_server;
@@ -126,6 +126,7 @@ namespace NN {
     }
 
     label_data* ld = (label_data*)ec->ld;
+    //cerr<<"Example label = "<<ld->label<<" weight = "<<ld->weight<<endl;
     float save_label = ld->label;
     void (*save_set_minmax) (shared_data*, float) = all.set_minmax;
     float save_min_label;
@@ -146,6 +147,13 @@ namespace NN {
     save_max_label = all.sd->max_label;
     all.sd->max_label = hidden_max_activation;
     ld->label = FLT_MAX;
+
+    // cerr<<"Weights1: ";
+    // for(int i = 0;i <= all.reg.weight_mask;i++)
+    //   if(fabs(all.reg.weight_vector[i]) > 0)
+    // 	cerr<<i<<":"<<all.reg.weight_vector[i]<<" ";
+    // cerr<<endl;
+
     for (unsigned int i = 0; i < n.k; ++i)
       {
         update_example_indicies(all.audit, ec, n.increment);
@@ -172,6 +180,12 @@ namespace NN {
     float save_final_prediction = 0;
     float save_ec_loss = 0;
 
+    // cerr<<"Weights2: ";
+    // for(int i = 0;i <= all.reg.weight_mask;i++)
+    //   if(fabs(all.reg.weight_vector[i]) > 0)
+    // 	cerr<<i<<":"<<all.reg.weight_vector[i]<<" ";
+    // cerr<<endl;
+
 CONVERSE: // That's right, I'm using goto. So sue me.
 
     n.output_layer.total_sum_feat_sq = 1;
@@ -185,6 +199,13 @@ CONVERSE: // That's right, I'm using goto. So sue me.
         n.output_layer.total_sum_feat_sq += sigmah * sigmah;
         n.output_layer.sum_feat_sq[nn_output_namespace] += sigmah * sigmah;
       }
+
+    // cerr<<"Weights3: ";
+    // for(int i = 0;i <= all.reg.weight_mask;i++)
+    //   if(fabs(all.reg.weight_vector[i]) > 0)
+    // 	cerr<<i<<":"<<all.reg.weight_vector[i]<<" ";
+    // cerr<<endl;
+
 
     if (n.inpass) {
       // TODO: this is not correct if there is something in the
@@ -213,10 +234,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       n.output_layer.eta_global = ec->eta_global;
       n.output_layer.global_weight = ec->global_weight;
       n.output_layer.example_t = ec->example_t;
+      //cerr<<"Before output train "<<((label_data*)ec->ld)->label<<" "<<((label_data*)ec->ld)->weight<<" "<<ec->global_weight<<" "<<ec->example_t<<" "<<ec->eta_round<<endl;
       n.base.learn(&n.output_layer);
       n.output_layer.ld = 0;
     }
-
+    
     // cerr<<"Weights: ";
     // for(int i = 0;i <= all.reg.weight_mask;i++)
     //   if(fabs(all.reg.weight_vector[i]) > 0)
@@ -235,6 +257,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       float gradient = all.loss->first_derivative(all.sd,
                                                   n.output_layer.final_prediction,
                                                   ld->label);
+      //cerr<<"gradient = "<<gradient<<endl;
 
       if (fabs (gradient) > 0) {
         all.loss = n.squared_loss;
@@ -253,6 +276,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
             float sigmahprime = dropscale * (1.0f - sigmah * sigmah);
             float nu = all.reg.weight_vector[n.output_layer.atomics[nn_output_namespace][i].weight_index & all.reg.weight_mask];
             float gradhw = 0.5f * nu * gradient * sigmahprime;
+	    //cerr<<n.increment<<":"<<sigmah<<":"<<nu<<":"<<(n.output_layer.atomics[nn_output_namespace][i].weight_index & all.reg.weight_mask)<<": ";
 
             ld->label = GD::finalize_prediction (all, hidden_units[i] - gradhw);
             if (ld->label != hidden_units[i])
@@ -408,6 +432,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     	  n.pool[i]->in_use = true;	
 	  float weight = ((label_data*) n.pool[i]->ld)->weight;
 	  n.current_t += weight;
+	  //cerr<<"Current_t = "<<n.current_t<<endl;
 	  n.pool[i]->example_t = n.current_t;	  
 	  label_avg += weight * ((label_data*) n.pool[i]->ld)->label;
 	  weight_sum += weight;
@@ -445,7 +470,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
   void predict_and_learn(vw& all, nn& n,  example** ec_arr, bool shouldOutput) {
     
     float* gradients = (float*)calloc(n.pool_pos, sizeof(float));
-    bool* train_pool = (bool*)calloc(2*n.pool_size, sizeof(bool));
+    bool* train_pool = (bool*)calloc(n.pool_size*n.pool_size, sizeof(bool));
     size_t* local_pos = (size_t*) calloc(n.pool_pos, sizeof(size_t));
     //cerr<<"Predicting\n";
     if(n.active) {
@@ -471,6 +496,9 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	gradsum += gradients[idx];
 	ec->loss = all.loss->getLoss(all.sd, ec->final_prediction, ld->label);
       }
+
+      if(n.para_active)
+	all_reduce(&gradsum, 1, *n.span_server, n.unique_id, n.total, n.node, *n.socks);
       
       multimap<float, int, std::greater<float> > scoremap;
       for(int i = 0;i < (&n)->pool_pos; i++)
@@ -481,7 +509,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       float querysum = 0;
       
       for(int i = 0;i < n.pool_pos;i++) {
-	queryp[i] = min<float>(gradients[i]/gradsum*n.subsample, 1.0);
+	queryp[i] = min<float>(gradients[i]/gradsum*(float)n.subsample, 1.0);
 	//cerr<<queryp[i]<<":"<<gradients[i]/gradsum * (float)n.subsample<<" ";
 	querysum += queryp[i];
       }
@@ -787,7 +815,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     else
       n->save_interval = -1;
     
-    n->pool = (example**)calloc(2*n->pool_size, sizeof(example*));
+    n->pool = (example**)calloc(n->pool_size*n->pool_size, sizeof(example*));
     n->pool_pos = 0;
     
     if(vm_file.count("subsample"))
