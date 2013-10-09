@@ -7,6 +7,7 @@ license as described in the file LICENSE.
 #include <math.h>
 #include <stdio.h>
 #include <sstream>
+#include <stdlib.h>
 
 #include "constant.h"
 #include "oaa.h"
@@ -52,6 +53,7 @@ namespace NN {
     size_t numqueries;
     size_t local_begin, local_end;
     size_t current_t;
+    int save_interval;
 
     std::string* span_server;
     size_t unique_id; //unique id for each node in the network, id == 0 means extra io.
@@ -500,8 +502,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       int num_train = 0;
       float label_avg = 0, weight_sum = 0;
 
-      //for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
-      for(int i = 0;i < n.pool_pos;i++)
+      for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
+	//for(int i = 0;i < n.pool_pos;i++)
 	if(frand48() < queryp[i]) {
 	  train_pool[i] = true;
 	  label_data* ld = (label_data*) n.pool[i]->ld;
@@ -566,6 +568,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       ec_arr[i] = NULL;
     int local_pos = 0;
     bool command = false;
+    int num_read = 0;
     
     // int one = 1;
     // all_reduce(&one, 1, *n->span_server, n->unique_id, n->total, n->node, *n->socks);
@@ -584,8 +587,19 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	      fflush(stderr);
 	      if(!command_example(all,ec_arr[i])) {
 		//cerr<<"Putting in the pool\n";
+		if(num_read % n->save_interval == 1) {
+		  string final_regressor_name = all->final_regressor_name;
+		  int model_num = num_read / n->save_interval;
+		  char buffer[50];
+		  sprintf(buffer, ".%d", model_num);
+		  final_regressor_name.append(buffer);
+		  cerr<<"Saving model to "<<final_regressor_name<<endl;
+		  save_predictor(*all, final_regressor_name, 0);
+		}
+
 		n->pool[n->pool_pos++] = ec_arr[i];		
 		//cerr<<ec_arr[i]->in_use<<" "<<n->pool[i]->in_use<<" "<<command_example(all,ec_arr[i])<<" "<<n->pool_pos<<" "<<ec_arr[i]->example_counter<<endl;
+		num_read++;
 	      }
 	      else {
 		cerr<<"Found command example!!!\n";
@@ -684,7 +698,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       ("subsample", po::value<size_t>(), "number of items to subsample from the pool")
       ("inpass", "Train or test sigmoidal feedforward network with input passthrough.")
       ("dropout", "Train or test sigmoidal feedforward network using dropout.")
-      ("meanfield", "Train or test sigmoidal feedforward network using mean field.");
+      ("meanfield", "Train or test sigmoidal feedforward network using mean field.")
+      ("save_interval", po::value<int>(), "Number of examples before saving the model");
 
     po::parsed_options parsed = po::command_line_parser(opts).
       style(po::command_line_style::default_style ^ po::command_line_style::allow_guessing).
@@ -750,6 +765,13 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       n->pool_size = vm["pool_size"].as<std::size_t>();
     else
       n->pool_size = 1;
+
+    if(vm_file.count("save_interval"))
+      n->save_interval = vm_file["save_interval"].as<int>();
+    else if(vm.count("save_interval")) 
+      n->save_interval = vm["save_interval"].as<int>();
+    else
+      n->save_interval = -1;
     
     n->pool = (example**)calloc(2*n->pool_size, sizeof(example*));
     n->pool_pos = 0;
