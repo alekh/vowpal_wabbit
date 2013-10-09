@@ -8,6 +8,7 @@ license as described in the file LICENSE.
 #include <stdio.h>
 #include <sstream>
 #include <stdlib.h>
+#include <time.h>
 
 #include "constant.h"
 #include "oaa.h"
@@ -62,6 +63,8 @@ namespace NN {
     node_socks* socks;
     bool all_done;
     bool local_done;
+    time_t start_time;
+    
   
     learner base;
     vw* all;
@@ -588,12 +591,17 @@ CONVERSE: // That's right, I'm using goto. So sue me.
 	      if(!command_example(all,ec_arr[i])) {
 		//cerr<<"Putting in the pool\n";
 		if(num_read % n->save_interval == 1) {
+		  time_t now;
+		  double elapsed;
+		  time(&now);
+		  elapsed = difftime(now, n->start_time);
+		  
 		  string final_regressor_name = all->final_regressor_name;
 		  int model_num = num_read / n->save_interval;
 		  char buffer[50];
 		  sprintf(buffer, ".%d", model_num);
 		  final_regressor_name.append(buffer);
-		  cerr<<"Saving model to "<<final_regressor_name<<endl;
+		  cerr<<"Saving model to "<<final_regressor_name<<" time elapsed = "<<elapsed<<endl;
 		  save_predictor(*all, final_regressor_name, 0);
 		}
 
@@ -674,6 +682,11 @@ CONVERSE: // That's right, I'm using goto. So sue me.
     vw* all = n->all;
     if(n->active)
       cerr<<"Number of label queries = "<<n->numqueries<<endl;   
+    time_t now;
+    double elapsed;
+    time(&now);
+    elapsed = difftime(now, n->start_time);
+    cerr<<"Total time elapsed = "<<elapsed<<endl;
     n->base.finish();
     delete n->squared_loss;
     free (n->output_layer.indices.begin);
@@ -685,9 +698,10 @@ CONVERSE: // That's right, I'm using goto. So sue me.
   }
 
   learner setup(vw& all, std::vector<std::string>&opts, po::variables_map& vm, po::variables_map& vm_file)
-  {
+  {    
     nn* n = (nn*)calloc(1,sizeof(nn));
     n->all = &all;
+    time(&n->start_time);
     cerr<<"Size = "<<sizeof(nn)<<" "<<sizeof(std::string)<<" "<<sizeof(n->span_server)<<endl;
 
     po::options_description desc("NN options");
