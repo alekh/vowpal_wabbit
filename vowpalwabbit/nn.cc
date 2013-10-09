@@ -504,7 +504,7 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       float querysum = 0;
       
       for(int i = 0;i < n.pool_pos;i++) {
-	queryp[i] = min<float>(gradients[i]/gradsum*n.subsample, 1.0);
+	queryp[i] = min<float>(gradients[i]/gradsum*(float)n.subsample, 1.0);
 	//cerr<<queryp[i]<<":"<<gradients[i]/gradsum * (float)n.subsample<<" ";
 	querysum += queryp[i];
       }
@@ -528,8 +528,8 @@ CONVERSE: // That's right, I'm using goto. So sue me.
       int num_train = 0;
       float label_avg = 0, weight_sum = 0;
 
-      //for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
-      for(int i = 0;i < n.pool_pos;i++)
+      for(int i = 0;i < n.pool_pos && num_train < n.subsample + 1;i++)
+	//for(int i = 0;i < n.pool_pos;i++)
 	if(frand48() < queryp[i]) {
 	  train_pool[i] = true;
 	  label_data* ld = (label_data*) n.pool[i]->ld;
