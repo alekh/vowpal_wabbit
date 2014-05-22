@@ -103,34 +103,17 @@ namespace ONLINE_TREE {
     entry->parent ^= 2;
   }
 
-  inline float get_deviation(float range, float variance, float alpha_mult, float log_delta)
-  {
-        float deviation;
-      
-        float delta_alpha_mult = alpha_mult * log_delta;
-	float variance_mod = variance * 0.71828;
-
-        if (variance_mod > range*range*delta_alpha_mult) 
-	  deviation = sqrt(variance_mod * delta_alpha_mult);
-        else
-	  deviation = range * max((float)0.50001, delta_alpha_mult);
-
-        if (deviation < 0.0)
-	  return 0.;
-	else
-	  return 2.f * deviation;
-  }
   
-  template<bool predict_only>
-  bool inset(online_tree& ot, uint32_t index)
+  template<bool predict_only> bool inset(online_tree& ot, uint32_t index)
   {    
     if (!predict_only)
       {
-	float w_val = fabsf(ot.all->reg.weight_vector[(ot.increment*2 + index) & ot.all->reg.weight_mask]);
-
+	float w_val = fabsf(ot.all->reg.weight_vector[(ot.increment*2 + index) & ot.all->reg.weight_mask] * ot.all->reg.weight_vector[(ot.increment*2 + index + ot.all->normalized_idx) & ot.all->reg.weight_mask]);
+	ot.best_score_in_period = max(ot.best_score_in_period, w_val);
+	
 	//cout<<"Inset "<<w_val<<endl;
-        if (w_val > ot.best_previous_score && ot.all->training)
-	  {
+        if (w_val > ot.alpha_mult * ot.best_previous_score && ot.all->training)
+	  {	    
 #ifdef DEBUG2
 	    cout << "setting parent of feature index " << index << endl;
 #endif
@@ -187,46 +170,64 @@ namespace ONLINE_TREE {
     return entry->parent & 1;
   }
 
-  template<bool predict_only> 
-  inline bool create_outset_feature(online_tree &ot) {
+  template<bool predict_only> void create_outset_feature(online_tree &ot) {
+    
+    v_array<feature> out_set_candidate;
+    
     for(int i = 0;i < ot.out_set_delta.size(); i++) {
 
       ot.f.weight_index = ot.out_set_delta[i].weight_index;
       
       for(int j = i;j < ot.out_set_parent.size(); j++) {
 	uint32_t wid = get_weight_index(ot, ot.out_set_parent[j].weight_index);
+	feature_stats* entry = get_entry(ot, wid);
+
 	feature product_ij;
 	product_ij.weight_index = wid;
-	product_ij.x = ot.out_set_delta[i].x * ot.out_set_parent[j].x ;
+	product_ij.x = (ot.out_set_delta[i].x * ot.out_set_parent[j].x) ;
+	out_set_candidate.push_back(product_ij);
 
-	ot.product_squared.atomics[tree].push_back(product_ij);
-	ot.out_set.push_back(product_ij);
       }
     }
 
+    //cout<<"Done pushing to out_set "<<out_set_candidate.size()<<endl;
+
     ot.out_set_delta.erase();
+    int inset_count = 0;
     
-    for(int i = 0; i < ot.out_set.size(); i++) {
+    for(int i = 0; i < out_set_candidate.size(); i++) {
       
-      uint32_t index = ot.out_set[i].weight_index;
-      float x = ot.out_set[i].x;
+      uint32_t index = out_set_candidate[i].weight_index;
+      float x = out_set_candidate[i].x;
       
       feature_stats* entry = get_entry(ot, index);
-	  
-      if (used_feature(entry) || x == 0.0) return 0;
+      
+      if (used_feature(entry) || x == 0.0) continue;
 	  
       set_cycle(entry);
 
+      //cout<<i<<" "<<ot.out_set.size()<<" "<<index<<" Checking inset\n";
+      
       //check in_set here
       if (inset<predict_only>(ot, index)) {
 	feature temp_f = ot.f;
-	create_inset_feature<predict_only>(ot, *(ot.original_ec), ot.out_set[i], entry);
+	//cout<<"Creating inset feature\n";
+	create_inset_feature<predict_only>(ot, *(ot.original_ec), out_set_candidate[i], entry);
 	ot.f = temp_f;
+	inset_count++;
       }
-      else
-	clear_cycle(entry);
-      
+      else if(!predict_only) {
+	ot.out_set.push_back(out_set_candidate[i]);			     
+	out_set_candidate[i].x *= out_set_candidate[i].x;
+	ot.product_squared.atomics[tree].push_back(out_set_candidate[i]);
+      }
+      else 
+	clear_cycle(entry);            
     }
+
+    out_set_candidate.delete_v();
+
+    //cout<<"Inset count = "<<inset_count<<endl;
     
   }
 
@@ -235,13 +236,14 @@ namespace ONLINE_TREE {
     uint32_t wid = f.weight_index;
     if (constant_feature(ot.all->reg, wid)) return false;
   
-    if(check_outset(ot, entry)) 
-      return true;
+    //if(check_outset(ot, entry)) 
+    //return true;
     else if (!predict_only)
       {
-	//cout<<"Outset "<<w_val<<endl;
+	//cout<<"Outset "<<fabsf(w_val)<<" "<<ot.best_previous_weight<<" "<<ot.best_weight_in_period<<endl;
 	ot.best_weight_in_period = max(ot.best_weight_in_period, fabsf(w_val));
-	if(fabsf(w_val) > ot.best_previous_weight) {
+	if(fabsf(w_val) > ot.alpha_mult * ot.best_previous_weight) {
+	  //cout<<"Adding to parent and delta\n";
 	  ot.out_set_parent.push_back(f);
 	  ot.out_set_delta.push_back(f);
 	  return true;
@@ -262,7 +264,7 @@ namespace ONLINE_TREE {
     fsq.x = f.x * f.x;
     ot.base_squared.atomics[tree].push_back(fsq);
     
-    float w_val = ot.all->reg.weight_vector[(ot.increment + f.weight_index) & ot.all->reg.weight_mask];
+    float w_val = ot.all->reg.weight_vector[(ot.increment + f.weight_index) & ot.all->reg.weight_mask] * ot.all->reg.weight_vector[(ot.increment + f.weight_index + ot.all->normalized_idx) & ot.all->reg.weight_mask];
     
     //check out_set bit here.
     if(outset<predict_only>(ot, entry, w_val, f) && !constant_feature(ot.all->reg, f.weight_index)) {
@@ -271,6 +273,7 @@ namespace ONLINE_TREE {
 	ot.max_depth = ot.current_depth;
       
       ot.f = f;
+      //cout<<"Creating outset feature\n";
       create_outset_feature<predict_only>(ot);
       ot.current_depth--;
     }
@@ -358,6 +361,8 @@ namespace ONLINE_TREE {
     ot.synthetic.total_sum_feat_sq = ot.synthetic.sum_feat_sq[tree];
 
     clear_features(ot, ot.synthetic.atomics[tree]);
+    //clear_features(ot, ot.base_squared.atomics[tree]);
+    //clear_features(ot, ot.product_squared.atomics[tree]);
     clear_features(ot, ot.out_set);
   }
   
@@ -373,6 +378,11 @@ namespace ONLINE_TREE {
       ec.loss = ot.all->loss->getLoss(ot.all->sd, ld->prediction, ld->label) * ld->weight;
   }
 
+  void print_weights(online_tree& ot, float v, float& w) {
+    uint32_t index = (uint32_t)(&w - ot.all->reg.weight_vector);
+    cout<<index<<":"<<ot.all->reg.weight_vector[(index + ot.increment*2) & ot.all->reg.weight_mask]<<" "<<v<<" ";
+  }
+
   void learn(online_tree& ot, learner& base, example& ec)
   {
     label_data* ld = (label_data*)(ec.ld);
@@ -382,10 +392,12 @@ namespace ONLINE_TREE {
 	predict(ot, base, ec);
 	return;
       }      
+    //cout<<"Next = "<<ot.next<<" "<<ec.example_counter<<endl;
 
     if (ec.example_counter >= ot.next)
       {
 	ot.next = ot.next + ot.base_period * pow(ot.next / ot.base_period, ot.period_power);
+	
 	
 	ot.best_previous_score = ot.best_score_in_period;
 	ot.best_previous_weight = ot.best_weight_in_period;
@@ -407,13 +419,23 @@ namespace ONLINE_TREE {
     simple_print_features(*(ot.all), &ot.synthetic);
 #endif
 
-    ((label_data*) ot.base_squared.ld)->initial = ld->prediction;
+    ((label_data*) ot.base_squared.ld)->label = (ld->prediction - ld->label)*(ld->prediction - ld->label);
 
-    ((label_data*) ot.product_squared.ld)->initial = ld->prediction;
+    ((label_data*) ot.product_squared.ld)->label = ((label_data*) ot.base_squared.ld)->label;
+    //cout<<((label_data*) ot.product_squared.ld)->label<<endl;
 
     base.learn(ot.base_squared, 1);
     base.learn(ot.product_squared, 2);
 
+    //cout<<((label_data*) ot.product_squared.ld)->label<<" "<<((label_data*) ot.product_squared.ld)->prediction<<endl;
+
+    //cout<<"Base square weights: \n";
+    //GD::foreach_feature<online_tree, print_weights >(*ot.all, ot.base_squared, ot);
+    //cout<<endl;
+    
+    // cout<<"Product square weights: \n";
+    // GD::foreach_feature<online_tree, print_weights >(*ot.all, ot.product_squared, ot);
+    // cout<<endl;
   }
 
   void finish(online_tree& ot)
@@ -426,6 +448,8 @@ namespace ONLINE_TREE {
     ot.out_set_delta.delete_v();
 
     free(ot.per_feature);
+    free(ot.prev_variance);
+    free(ot.prev_value);
   }
 
   void finish_online_tree_example(vw& all, online_tree& ot, example& ec)
