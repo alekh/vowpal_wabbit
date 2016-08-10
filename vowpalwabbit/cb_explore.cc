@@ -95,7 +95,7 @@ namespace CB_EXPLORE{
     for(uint32_t i = 0;i < data.cbcs.num_actions;i++) 
       probs.push_back({i,0.});
     float prob = 1.f/(float)data.bag_size;
-    for(int i = 0;i < data.bag_size;i++) {
+    for(uint32_t i = 0;i < data.bag_size;i++) {
       uint32_t count = BS::weight_gen();
       if (is_learn && count > 0)
 	base.learn(ec,i);
@@ -133,34 +133,7 @@ namespace CB_EXPLORE{
 	  if (distribution[i].score > min_prob)
 	    distribution[i].score = distribution[i].score * ratio;
       }
-  }
 
-  void get_cover_probabilities(cb_explore& data, base_learner& base, example& ec, v_array<action_score>& probs)
-  { 
-    float additive_probability = 1.f / (float)data.cover_size;
-    data.preds.erase();
-
-    for(uint32_t i = 0;i < data.cbcs.num_actions;i++)
-      probs.push_back({i,0.});
-
-    for (size_t i = 0; i < data.cover_size; i++)
-      { //get predicted cost-sensitive predictions
-	if (i == 0)
-	  data.cs->predict(ec, i);
-	else
-	  data.cs->predict(ec, i + 1);
-	uint32_t pred = ec.pred.multiclass;
-	probs[pred - 1].score += additive_probability;
-	data.preds.push_back((uint32_t)pred);
-      }
-    uint32_t num_actions = data.cbcs.num_actions;
-    float epsilon = data.epsilon;
-    
-    float min_prob = epsilon * min(1.f / num_actions, 1.f / (float)sqrt(data.counter * num_actions));
-    
-    safety(probs, min_prob, false);
-    
-    data.counter++;
   }
 
   template <bool is_learn>
@@ -168,68 +141,66 @@ namespace CB_EXPLORE{
   { //Randomize over predictions from a base set of predictors
     //Use cost sensitive oracle to cover actions to form distribution.
 
+    v_array<action_score> preds = ec.pred.a_s;
+
+    if(is_learn)
+      base.learn(ec);
+    else
+      base.predict(ec);
+
     uint32_t num_actions = data.cbcs.num_actions;
-
-    v_array<action_score> probs = ec.pred.a_s;
-    probs.erase();
-    data.cs_label.costs.erase();
-
-    for (uint32_t j = 0; j < num_actions; j++)
-      data.cs_label.costs.push_back({FLT_MAX,j+1,0.,0.});
 
     float epsilon = data.epsilon;
     size_t cover_size = data.cover_size;
-    size_t counter = data.counter;
+    size_t counter = data.counter++;
     v_array<float>& probabilities = data.cover_probs;
-    v_array<uint32_t>& predictions = data.preds;
 
     float additive_probability = 1.f / (float)cover_size;
 
     float min_prob = epsilon * min(1.f / num_actions, 1.f / (float)sqrt(counter * num_actions));
-
+    
     data.cb_label = ec.l.cb;
-
     ec.l.cs = data.cs_label;
-    get_cover_probabilities(data, base, ec, probs);
-	
-    if (is_learn) {
-      ec.l.cb = data.cb_label;
-      base.learn(ec);
 
-      //Now update oracles
+    for(uint32_t i = 0;i < num_actions;i++)
+      probabilities[i] = 0.;
+    probabilities[ec.pred.multiclass-1] += additive_probability;
 
-      //1. Compute loss vector
-      data.cs_label.costs.erase();
-      float norm = min_prob * num_actions;
-      ec.l.cb = data.cb_label;
-      data.cbcs.known_cost = get_observed_cost(data.cb_label);
-      gen_cs_example<false>(data.cbcs, ec, data.cb_label, data.cs_label);
-      for(uint32_t i = 0;i < num_actions;i++)
-	probabilities[i] = 0;
+    float norm = min_prob * num_actions + (additive_probability - min_prob);
 
-      ec.l.cs = data.second_cs_label;
-      //2. Update functions
-      for (size_t i = 0; i < cover_size; i++)
-	{ //Create costs of each action based on online cover
+    data.cbcs.known_cost = get_observed_cost(data.cb_label);
+    gen_cs_example<false>(data.cbcs, ec, data.cb_label, data.cs_label);
+
+    for (size_t i = 1; i < cover_size; i++)
+      { 
+	if (is_learn) {	  
+	  
+	  //Update functions
+	  
 	  for (uint32_t j = 0; j < num_actions; j++)
-	    { float pseudo_cost = data.cs_label.costs[j].x - epsilon * min_prob / (max(probabilities[j], min_prob) / norm) + 1;
+	    { float pseudo_cost = data.cs_label.costs[j].x - epsilon * min_prob / (max(probabilities[j], min_prob) / norm);
 	      data.second_cs_label.costs[j].class_index = j+1;
 	      data.second_cs_label.costs[j].x = pseudo_cost;
-	      //cout<<pseudo_cost<<" ";
 	    }
-	  //cout<<epsilon<<" "<<endl;
-	  if (i != 0)
-	    data.cs->learn(ec,i+1);
-	  if (probabilities[predictions[i] - 1] < min_prob)
-	    norm += max(0, additive_probability - (min_prob - probabilities[predictions[i] - 1]));
+	  
+	  ec.l.cs = data.second_cs_label;
+	  data.cs->learn(ec,i+1);
+	  uint32_t action = ec.pred.multiclass-1;
+
+	  if (probabilities[action] < min_prob)
+	    norm += max(0, additive_probability - (min_prob - probabilities[action]));
 	  else
 	    norm += additive_probability;
-	  probabilities[predictions[i] - 1] += additive_probability;
+	  probabilities[action] += additive_probability;
 	}
     }
 
     ec.l.cb = data.cb_label;
-    ec.pred.a_s = probs;
+    preds.erase();
+    for(uint32_t i = 0;i < num_actions;i++)
+      preds.push_back({i, probabilities[i]}); 
+    safety(preds, min_prob, true);
+    ec.pred.a_s = preds;
   }
 
   void finish(cb_explore& data)
@@ -258,9 +229,12 @@ namespace CB_EXPLORE{
 
     cb_to_cs& c = data.cbcs;
   
-    if ((c.known_cost = get_observed_cost(ld)) != nullptr)
-      for(uint32_t i = 0;i < ec.pred.a_s.size();i++)
-	loss += get_unbiased_cost(c.known_cost, c.pred_scores, i)*ec.pred.a_s[i].score;
+    if ((c.known_cost = get_observed_cost(ld)) != nullptr) 
+      for(uint32_t i = 0;i < ec.pred.a_s.size();i++) {
+	loss += get_unbiased_cost(c.known_cost, i+1)*ec.pred.a_s[i].score;
+	//cout<<c.known_cost->cost<<":"<<c.known_cost->action<<":"<<ec.pred.a_s[i].score<<":"<<get_unbiased_cost(c.known_cost, i+1)<<" ";
+      }
+    //cout<<endl;
   
     all.sd->update(ec.test_only, loss, 1.f, ec.num_features);
     
@@ -350,7 +324,7 @@ base_learner* cb_explore_setup(vw& all)
       data.preds.resize(data.cover_size);
       sprintf(type_string, "%f", data.epsilon);
       *all.file_options << " --epsilon " << type_string;
-      l = &init_learner(&data, base, predict_or_learn_cover<true>, predict_or_learn_cover<false>, data.cover_size + 1);
+      l = &init_learner(&data, base, predict_or_learn_cover<true>, predict_or_learn_cover<false>, data.cover_size);
     }
   else if (vm.count("bag"))
     { data.bag_size = (uint32_t)vm["bag"].as<size_t>();

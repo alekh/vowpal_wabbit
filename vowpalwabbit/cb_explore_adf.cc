@@ -179,6 +179,7 @@ namespace CB_EXPLORE_ADF{
     
     float additive_probability = 1.f / (float)data.cover_size;
     float min_prob = data.epsilon / num_actions;
+
     v_array<action_score>& probs = data.action_probs;
     probs.erase();
     for(uint32_t i = 0;i < num_actions;i++)
@@ -211,7 +212,7 @@ namespace CB_EXPLORE_ADF{
 	probs[action].score += additive_probability;
       }
     
-    CB_EXPLORE::safety(data.action_probs, data.epsilon, true);
+    CB_EXPLORE::safety(data.action_probs, min_prob, true);
     for (size_t i = 0; i < num_actions; i++) 
       preds[i].score = probs[preds[i].action].score;
   }
